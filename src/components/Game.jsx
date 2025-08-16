@@ -26,8 +26,8 @@ const Game = ({ onBackToMenu }) => {
       
       {/* Game UI Overlay */}
       <div className="absolute top-4 left-4 text-white z-10">
-        <h1 className="text-2xl font-bold mb-2">Space Game</h1>
-        <p className="text-sm opacity-80">Use mouse to rotate camera</p>
+        <h1 className="text-2xl font-bold mb-2" style={{ color: '#008f11' }}>LOST GRAVITY</h1>
+        <p className="text-sm opacity-80">Navigate through asteroid field • Destroy enemies</p>
       </div>
       
       {/* Back to Menu Button */}
