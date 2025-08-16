@@ -3,12 +3,12 @@ import React from 'react';
 const StartScreen = ({ onStartGame }) => {
   return (
     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-black via-purple-900 to-blue-900">
-      <div className="text-center space-y-8 p-8 rounded-2xl bg-black/30 backdrop-blur-sm border border-white/20 shadow-2xl">
+      <div className="text-center space-y-8 p-8 rounded-2xl bg-black/30 backdrop-blur-sm border border-white/20 shadow-2xl max-w-lg">
         <div className="space-y-4">
           <h1 className="text-6xl font-bold text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text">
             SPACE GAME
           </h1>
-          <p className="text-xl text-white/80 max-w-md">
+          <p className="text-xl text-white/80 max-w-md mx-auto">
             Welcome to the ultimate space adventure! Ready to explore the cosmos?
           </p>
         </div>
