@@ -152,6 +152,17 @@ const Asteroid = ({ position, rotation, scale, index }) => {
   return <primitive object={clonedScene} />;
 };
 
+// Base component for the two bases
+const Base = ({ position, color, size = [40, 20, 40] }) => {
+  console.log(`Creating base at position:`, position, `with color:`, color);
+  return (
+    <mesh position={position}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
+    </mesh>
+  );
+};
+
 // Asteroid field component
 const AsteroidField = () => {
   const asteroids = useMemo(() => {
@@ -241,14 +252,19 @@ const Game = ({ onBackToMenu }) => {
         }}
       >
         {/* Lighting to see the white box */}
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[10, 10, 10]} intensity={1.2} />
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[-100, 50, 0]} intensity={2.0} target-position={[110, 0, 0]} />
+        <directionalLight position={[100, 50, 0]} intensity={2.0} target-position={[-110, 0, 0]} />
         
         {/* Sophisticated starfield with custom shaders */}
         <Starfield />
         
         {/* Asteroid field */}
         <AsteroidField />
+        
+        {/* Two bases at opposite ends */}
+        <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
+        <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
         
         {/* Camera with GLB model child */}
         <CameraWithModel />
