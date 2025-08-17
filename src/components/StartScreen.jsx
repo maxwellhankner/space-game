@@ -1,5 +1,4 @@
 import React from 'react';
-import AudioPlayer from './AudioPlayer';
 
 const StartScreen = ({ onStartGame }) => {
   return (
@@ -12,11 +11,6 @@ const StartScreen = ({ onStartGame }) => {
           <p className="text-xl max-w-md mx-auto" style={{ color: '#008f11', fontFamily: 'Courier New, monospace' }}>
             operation: navigate through an asteroid field in zero-gravity and destroy all enemies.
           </p>
-        </div>
-        
-        {/* Audio Player */}
-        <div className="pt-4">
-          <AudioPlayer />
         </div>
         
         <div className="pt-4">
