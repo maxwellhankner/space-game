@@ -52,7 +52,7 @@ const Starfield = () => {
 };
 
 // Character component that will be the center focal point
-const Character = ({ rotation, position }) => {
+const Character = ({ quaternion, position }) => {
   const { scene } = useGLTF('/models/astronaut-1.glb');
   const modelRef = useRef();
   
@@ -66,28 +66,15 @@ const Character = ({ rotation, position }) => {
 
   useFrame(() => {
     if (modelRef.current && scene) {
-      // Create a quaternion for the character's rotation
-      const quaternion = new THREE.Quaternion();
-      
-      // Apply rotations in the same order as the camera calculations
-      // First rotate around Y (yaw)
-      const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotation.y);
-      quaternion.multiply(yawQuat);
-      
-      // Then rotate around X (pitch) - but in the rotated coordinate system
-      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rotation.x);
-      quaternion.multiply(pitchQuat);
-      
-      // Then rotate around Z (roll) - add the missing Z rotation
-      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotation.z);
-      quaternion.multiply(rollQuat);
+      // Create a quaternion that combines the character's rotation with the initial model orientation
+      const finalQuaternion = quaternion.clone();
       
       // Apply the initial model orientation (facing forward)
       const initialQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-      quaternion.multiply(initialQuat);
+      finalQuaternion.multiply(initialQuat);
       
       // Apply the quaternion to the scene
-      scene.quaternion.copy(quaternion);
+      scene.quaternion.copy(finalQuaternion);
       
       // Set position
       scene.position.set(position.x, position.y, position.z);
@@ -102,36 +89,22 @@ const Character = ({ rotation, position }) => {
 };
 
 // Simple component that copies character rotation to camera
-const CameraRotationSync = ({ characterRotation, characterPosition }) => {
+const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
   useFrame((state) => {
     const camera = state.camera;
     
-    // Create a quaternion for the camera's rotation (same as character)
-    const quaternion = new THREE.Quaternion();
-    
-    // Apply rotations in the same order as the character
-    // First rotate around Y (yaw)
-    const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), characterRotation.y);
-    quaternion.multiply(yawQuat);
-    
-    // Then rotate around X (pitch)
-    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), characterRotation.x);
-    quaternion.multiply(pitchQuat);
-    
-    // Then rotate around Z (roll)
-    const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), characterRotation.z);
-    quaternion.multiply(rollQuat);
-    
-    // Apply the quaternion to the camera
-    camera.quaternion.copy(quaternion);
+    // Apply the character's quaternion directly to the camera
+    camera.quaternion.copy(characterQuaternion);
     
     // Calculate position to always be behind the character
-    // Character's forward direction: (-sinY * cosX, sinX, -cosY * cosX)
-    // Camera behind: opposite of forward direction
-    const cosY = Math.cos(characterRotation.y);
-    const sinY = Math.sin(characterRotation.y);
-    const cosX = Math.cos(characterRotation.x);
-    const sinX = Math.sin(characterRotation.x);
+    // Extract Euler angles from quaternion for position calculations
+    const euler = new THREE.Euler();
+    euler.setFromQuaternion(characterQuaternion, 'YXZ');
+    
+    const cosY = Math.cos(euler.y);
+    const sinY = Math.sin(euler.y);
+    const cosX = Math.cos(euler.x);
+    const sinX = Math.sin(euler.x);
     
     // Camera distance behind character
     const cameraDistance = 15;
@@ -152,62 +125,6 @@ const CameraRotationSync = ({ characterRotation, characterPosition }) => {
   return null;
 };
 
-// Component that applies character rotation to cube using quaternions
-const CubeRotationSync = ({ characterRotation, characterPosition }) => {
-  const cubeRef = useRef();
-  
-  useFrame(() => {
-    if (cubeRef.current) {
-      // Create a quaternion for the cube's rotation (same as character)
-      const quaternion = new THREE.Quaternion();
-      
-      // Apply rotations in the same order as the character
-      // First rotate around Y (yaw)
-      const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), characterRotation.y);
-      quaternion.multiply(yawQuat);
-      
-      // Then rotate around X (pitch)
-      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), characterRotation.x);
-      quaternion.multiply(pitchQuat);
-      
-      // Then rotate around Z (roll)
-      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), characterRotation.z);
-      quaternion.multiply(rollQuat);
-      
-      // Apply the quaternion to the cube
-      cubeRef.current.quaternion.copy(quaternion);
-      
-      // Calculate position to always be to the right of the character
-      // Character's right vector is perpendicular to their forward direction
-      // Forward: (-sinY * cosX, sinX, -cosY * cosX)
-      // Right: (cosY, 0, -sinY) - simplified right vector
-      const cosY = Math.cos(characterRotation.y);
-      const sinY = Math.sin(characterRotation.y);
-      
-      // Offset distance from character
-      const offsetDistance = 3;
-      
-      // Calculate right vector (perpendicular to forward direction)
-      const rightX = cosY;
-      const rightZ = -sinY;
-      
-      // Position cube to the right of character
-      const cubeX = characterPosition.x + rightX * offsetDistance;
-      const cubeY = characterPosition.y; // Same height as character
-      const cubeZ = characterPosition.z + rightZ * offsetDistance;
-      
-      cubeRef.current.position.set(cubeX, cubeY, cubeZ);
-    }
-  });
-  
-  return (
-    <mesh ref={cubeRef}>
-      <boxGeometry args={[0.5, 5, 5]} />
-      <meshStandardMaterial color="#ffaa00" />
-    </mesh>
-  );
-};
-
 // Base component for the two bases
 const Base = ({ position, color, size = [40, 20, 40] }) => {
   return (
@@ -218,8 +135,8 @@ const Base = ({ position, color, size = [40, 20, 40] }) => {
   );
 };
 
-// Sphere component for navigation markers
-const Sphere = ({ position, color, radius = 8, segments = 16 }) => {
+// Asteroid component for navigation markers
+const Asteroid = ({ position, color, radius = 8, segments = 16 }) => {
   return (
     <mesh position={position}>
       <sphereGeometry args={[radius, segments, segments]} />
@@ -229,7 +146,7 @@ const Sphere = ({ position, color, radius = 8, segments = 16 }) => {
 };
 
 // Data provider component that runs inside Canvas
-const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) => {
+const DataProvider = ({ onDataUpdate, characterQuaternion, characterPosition }) => {
   useFrame((state) => {
     const camera = state.camera;
     
@@ -248,10 +165,20 @@ const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) =>
         Math.round(euler.y * 180 / Math.PI),
         Math.round(euler.z * 180 / Math.PI)
       ],
+      quaternion: [
+        camera.quaternion.x.toFixed(3),
+        camera.quaternion.y.toFixed(3),
+        camera.quaternion.z.toFixed(3),
+        camera.quaternion.w.toFixed(3)
+      ],
       fov: Math.round(camera.fov)
     };
     
     // Character position is now dynamic based on movement
+    // Extract Euler angles from quaternion for display
+    const characterEuler = new THREE.Euler();
+    characterEuler.setFromQuaternion(characterQuaternion, 'YXZ');
+    
     const characterData = {
       position: [
         Math.round(characterPosition.x),
@@ -259,9 +186,15 @@ const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) =>
         Math.round(characterPosition.z)
       ],
       rotation: [
-        Math.round(characterRotation.x * 180 / Math.PI),
-        Math.round(characterRotation.y * 180 / Math.PI),
-        Math.round(characterRotation.z * 180 / Math.PI)
+        Math.round(characterEuler.x * 180 / Math.PI),
+        Math.round(characterEuler.y * 180 / Math.PI),
+        Math.round(characterEuler.z * 180 / Math.PI)
+      ],
+      quaternion: [
+        characterQuaternion.x.toFixed(3),
+        characterQuaternion.y.toFixed(3),
+        characterQuaternion.z.toFixed(3),
+        characterQuaternion.w.toFixed(3)
       ],
       status: 'ACTIVE'
     };
@@ -285,7 +218,8 @@ const Monitor = ({ data }) => {
           <div>POS: [{data.character.position[0]}, {data.character.position[1]}, {data.character.position[2]}]</div>
           <div>ROT: [{data.character.rotation[0]}°, {data.character.rotation[1]}°, {data.character.rotation[2]}°]</div>
           <div>STATUS: {data.character.status}</div>
-          <div className="text-yellow-400 text-xs">Raw: X:{data.character.rotation[0].toFixed(2)}° Y:{data.character.rotation[1].toFixed(2)}° Z:{data.character.rotation[2].toFixed(2)}°</div>
+          <div className="text-yellow-400 text-xs">Euler: X:{data.character.rotation[0].toFixed(2)}° Y:{data.character.rotation[1].toFixed(2)}° Z:{data.character.rotation[2].toFixed(2)}°</div>
+          <div className="text-purple-400 text-xs">Quat: [{data.character.quaternion[0]}, {data.character.quaternion[1]}, {data.character.quaternion[2]}, {data.character.quaternion[3]}]</div>
         </div>
       </div>
 
@@ -296,7 +230,8 @@ const Monitor = ({ data }) => {
           <div>POS: [{data.camera.position[0]}, {data.camera.position[1]}, {data.camera.position[2]}]</div>
           <div>ROT: [{data.camera.rotation[0]}°, {data.camera.rotation[1]}°, {data.camera.rotation[2]}°]</div>
           <div>FOV: {data.camera.fov}°</div>
-          <div className="text-yellow-400 text-xs">Raw: X:{data.camera.rotation[0].toFixed(2)}° Y:{data.camera.rotation[1].toFixed(2)}° Z:{data.camera.rotation[2].toFixed(2)}°</div>
+          <div className="text-yellow-400 text-xs">Euler: X:{data.camera.rotation[0].toFixed(2)}° Y:{data.camera.rotation[1].toFixed(2)}° Z:{data.camera.rotation[2].toFixed(2)}°</div>
+          <div className="text-purple-400 text-xs">Quat: [{data.camera.quaternion[0]}, {data.camera.quaternion[1]}, {data.camera.quaternion[2]}, {data.camera.quaternion[3]}]</div>
         </div>
       </div>
     </>
@@ -305,9 +240,10 @@ const Monitor = ({ data }) => {
 
 const Game = ({ onBackToMenu }) => {
   const [monitorData, setMonitorData] = useState(null);
-  const [characterRotation, setCharacterRotation] = useState({ x: 0, y: 0, z: 0 });
+  const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
   const [characterVelocity, setCharacterVelocity] = useState({ x: 0, y: 0, z: 0 });
   const [characterPosition, setCharacterPosition] = useState({ x: 0, y: 0, z: 0 });
+  const [rotationalVelocity, setRotationalVelocity] = useState(new THREE.Vector3(0, 0, 0));
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [lastMouseX, setLastMouseX] = useState(0);
   const [lastMouseY, setLastMouseY] = useState(0);
@@ -329,19 +265,19 @@ const Game = ({ onBackToMenu }) => {
       const deltaY = e.clientY - lastMouseY;
       const sensitivity = 0.01; // Adjust this for rotation speed
       
-      setCharacterRotation(prev => {
-        // Calculate new pitch (X rotation) - no bounds, can look up as much as you want!
-        const newPitch = prev.x - deltaY * sensitivity;
+      setCharacterQuaternion(prev => {
+        // Create a new quaternion for the rotation changes
+        const newQuaternion = prev.clone();
         
-        // For yaw (Y rotation), we need to apply it in the camera's coordinate system
-        // This means we need to account for the current pitch when calculating yaw
-        const newYaw = prev.y - deltaX * sensitivity;
+        // Create rotation quaternions for pitch (X) and yaw (Y)
+        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deltaY * sensitivity);
+        const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sensitivity);
         
-        return {
-          x: newPitch,
-          y: newYaw,
-          z: 0 // No roll
-        };
+        // Apply pitch first, then yaw (same order as before)
+        newQuaternion.multiply(pitchQuat);
+        newQuaternion.multiply(yawQuat);
+        
+        return newQuaternion;
       });
       
       setLastMouseX(e.clientX);
@@ -351,27 +287,75 @@ const Game = ({ onBackToMenu }) => {
 
   // Handle keyboard controls for thrust and rotation
   const handleKeyDown = (e) => {
-    const thrustPower = 0.5;
+    const thrustPower = 0.25;
     const rotationSpeed = 0.1; // Adjust this for rotation speed
     
-    const cosY = Math.cos(characterRotation.y);
-    const sinY = Math.sin(characterRotation.y);
-    const cosX = Math.cos(characterRotation.x);
-    const sinX = Math.sin(characterRotation.x);
+    // Extract Euler angles from quaternion for direction calculations
+    const euler = new THREE.Euler();
+    euler.setFromQuaternion(characterQuaternion, 'YXZ');
     
-    // Direction vectors
-    const forward = { x: -sinY * cosX, y: sinX, z: -cosY * cosX };
-    const right = { x: forward.z, y: 0, z: -forward.x }; // Simplified right vector
-    const up = { x: cosY * sinX, y: -cosX, z: sinY * sinX };
+    const cosY = Math.cos(euler.y);
+    const sinY = Math.sin(euler.y);
+    const cosX = Math.cos(euler.x);
+    const sinX = Math.sin(euler.x);
+    const cosZ = Math.cos(euler.z);
+    const sinZ = Math.sin(euler.z);
     
-    // Thrust multipliers for each direction
+    // Calculate forward/backward vectors using quaternion
+    const forwardVector = new THREE.Vector3(0, 0, -1);
+    forwardVector.applyQuaternion(characterQuaternion);
+    const forward = {
+      x: forwardVector.x,
+      y: forwardVector.y,
+      z: forwardVector.z
+    };
+    
+    const backward = {
+      x: -forwardVector.x,
+      y: -forwardVector.y,
+      z: -forwardVector.z
+    };
+    
+    // Calculate right vector using quaternion
+    const rightVector = new THREE.Vector3(1, 0, 0);
+    rightVector.applyQuaternion(characterQuaternion);
+    const right = {
+      x: rightVector.x,
+      y: rightVector.y,
+      z: rightVector.z
+    };
+
+    // Calculate up vector using quaternion
+    const upVector = new THREE.Vector3(0, 1, 0);
+    upVector.applyQuaternion(characterQuaternion);
+    const up = {
+      x: upVector.x,
+      y: upVector.y,
+      z: upVector.z
+    };
+
+    // Down is negative of up
+    const down = {
+      x: -upVector.x,
+      y: -upVector.y,
+      z: -upVector.z
+    };
+    
+    // Left is negative of right
+    const left = {
+      x: -right.x,
+      y: -right.y,
+      z: -right.z
+    };
+    
+    // Thrust multipliers for all directions
     const thrusts = {
       'w': forward,    // Forward
-      's': { x: -forward.x, y: -forward.y, z: -forward.z }, // Backward
-      'a': right,      // Left
-      'd': { x: -right.x, y: -right.y, z: -right.z },       // Right
-      'q': up,         // Up
-      'e': { x: -up.x, y: -up.y, z: -up.z }                 // Down
+      's': backward,   // Backward
+      'd': right,      // Right
+      'a': left,       // Left
+      'e': up,         // Up
+      'q': down        // Down
     };
     
     const key = e.key.toLowerCase();
@@ -382,19 +366,27 @@ const Game = ({ onBackToMenu }) => {
         z: prev.z + thrusts[key].z * thrustPower
       }));
     } else if (key === ' ') {
+      // Space key - stop all motion
       setCharacterVelocity({ x: 0, y: 0, z: 0 });
+      setRotationalVelocity(new THREE.Vector3(0, 0, 0));
     } else if (key === 'r') {
-      // R key - roll left (negative Z rotation)
-      setCharacterRotation(prev => ({
-        ...prev,
-        z: prev.z - rotationSpeed
-      }));
+      // R key - add right roll velocity (positive Z rotation)
+      const rollPower = 0.02; // Much slower roll speed
+      setRotationalVelocity(prev => {
+        // Add positive roll power, but don't exceed max speed
+        const maxSpeed = 0.1;
+        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z + rollPower));
+        return new THREE.Vector3(0, 0, newZ);
+      });
     } else if (key === 'f') {
-      // F key - roll right (positive Z rotation)
-      setCharacterRotation(prev => ({
-        ...prev,
-        z: prev.z + rotationSpeed
-      }));
+      // F key - add left roll velocity (negative Z rotation)
+      const rollPower = 0.02; // Much slower roll speed
+      setRotationalVelocity(prev => {
+        // Add negative roll power, but don't exceed max speed
+        const maxSpeed = 0.1;
+        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z - rollPower));
+        return new THREE.Vector3(0, 0, newZ);
+      });
     }
   };
 
@@ -405,7 +397,7 @@ const Game = ({ onBackToMenu }) => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [characterRotation]);
+  }, [characterQuaternion]);
 
   // Add mouse event listeners
   useEffect(() => {
@@ -423,6 +415,7 @@ const Game = ({ onBackToMenu }) => {
   // Physics update loop
   useEffect(() => {
     const physicsInterval = setInterval(() => {
+      // Update position
       setCharacterPosition(prev => {
         const newPos = {
           x: prev.x + characterVelocity.x,
@@ -439,10 +432,26 @@ const Game = ({ onBackToMenu }) => {
           z: Math.max(-maxDistance, Math.min(maxDistance, newPos.z))
         };
       });
+
+      // Update rotation
+      if (rotationalVelocity.x !== 0 || rotationalVelocity.y !== 0 || rotationalVelocity.z !== 0) {
+        setCharacterQuaternion(prev => {
+          const newQuaternion = prev.clone();
+          const rotationQuat = new THREE.Quaternion();
+          rotationQuat.setFromEuler(new THREE.Euler(
+            rotationalVelocity.x,
+            rotationalVelocity.y,
+            rotationalVelocity.z,
+            'XYZ'
+          ));
+          newQuaternion.multiply(rotationQuat);
+          return newQuaternion;
+        });
+      }
     }, 16);
 
     return () => clearInterval(physicsInterval);
-  }, [characterVelocity]);
+  }, [characterVelocity, rotationalVelocity]);
 
   return (
     <div className="w-full h-full bg-black">
@@ -463,23 +472,20 @@ const Game = ({ onBackToMenu }) => {
         <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
         <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
         
-        {/* Navigation spheres using the Sphere component */}
-        <Sphere position={[-30, 0, 0]} color="#ff4444" />
-        <Sphere position={[0, 0, -30]} color="#4444ff" />
-        <Sphere position={[0, 30, 0]} color="#44ff44" />
-        <Sphere position={[0, -30, 0]} color="#ffff44" />
-        <Sphere position={[30, 0, 0]} color="#ff44ff" />
-        <Sphere position={[0, 0, 30]} color="#ff8844" />
+        {/* Navigation asteroids using the Asteroid component */}
+        <Asteroid position={[-30, 0, 0]} color="#ff4444" />
+        <Asteroid position={[0, 0, -30]} color="#4444ff" />
+        <Asteroid position={[0, 30, 0]} color="#44ff44" />
+        <Asteroid position={[0, -30, 0]} color="#ffff44" />
+        <Asteroid position={[30, 0, 0]} color="#ff44ff" />
+        <Asteroid position={[0, 0, 30]} color="#ff8844" />
         
-        <Character rotation={characterRotation} position={characterPosition} />
-        
-        {/* Cube rotation sync using quaternions like the character */}
-        <CubeRotationSync characterRotation={characterRotation} characterPosition={characterPosition} />
+        <Character quaternion={characterQuaternion} position={characterPosition} />
         
         {/* Camera rotation sync using quaternions like the character */}
-        <CameraRotationSync characterRotation={characterRotation} characterPosition={characterPosition} />
+        <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
         
-        <DataProvider onDataUpdate={setMonitorData} characterRotation={characterRotation} characterPosition={characterPosition} />
+        <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
       </Canvas>
       
       {/* Combined Monitor */}
@@ -488,4 +494,4 @@ const Game = ({ onBackToMenu }) => {
   );
 };
 
-export default Game; 
+export default Game;
