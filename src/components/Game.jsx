@@ -1,160 +1,133 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, useGLTF } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Sophisticated starfield component using custom shaders
+// Simplified starfield component using built-in Three.js materials
 const Starfield = () => {
-  const starMaterialRef = useRef();
-  const starsRef = useRef();
-  
   // Create starfield geometry and material
   const { geometry, material } = useMemo(() => {
-    const STAR_COUNT = 10000;  // Reduced from 50000 for better performance
-    const R_INNER = 200;  // Further back
-    const R_OUTER = 1000;  // Further back
+    const STAR_COUNT = 5000; // Reduced from 10000
+    const R_INNER = 500;
+    const R_OUTER = 1000;
 
     const positions = new Float32Array(STAR_COUNT * 3);
-    const sizes = new Float32Array(STAR_COUNT);
-    const phases = new Float32Array(STAR_COUNT);
+    const colors = new Float32Array(STAR_COUNT * 3);
 
-    // Random points in a spherical shell
+    // Generate stars in a spherical shell
     for (let i = 0; i < STAR_COUNT; i++) {
       const u = Math.random() * 2 - 1;
       const t = Math.random() * Math.PI * 2;
       const r = Math.cbrt(Math.random()) * (R_OUTER - R_INNER) + R_INNER;
       const s = Math.sqrt(1 - u * u);
-      const x = r * s * Math.cos(t);
-      const y = r * s * Math.sin(t);
-      const z = r * u;
-
-      positions[i * 3 + 0] = x;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = z;
-
-      sizes[i] = 1.0 + Math.random() * 0.2;  // Slightly bigger stars
-      phases[i] = Math.random() * Math.PI * 2.0;
+      
+      positions[i * 3] = r * s * Math.cos(t);
+      positions[i * 3 + 1] = r * s * Math.sin(t);
+      positions[i * 3 + 2] = r * u;
+      
+      // Simplified brightness - all stars same brightness
+      const brightness = 0.9;
+      colors[i * 3] = brightness;
+      colors[i * 3 + 1] = brightness;
+      colors[i * 3 + 2] = brightness;
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-    geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    // Custom shader material for stars
-    const material = new THREE.ShaderMaterial({
+    // Simplified material
+    const material = new THREE.PointsMaterial({
+      size: 2,
+      vertexColors: true,
       transparent: true,
-      depthWrite: false,
-      uniforms: {
-        uTime: { value: 0 },
-        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-      },
-      vertexShader: /* glsl */`
-        attribute float aSize;
-        attribute float aPhase;
-        uniform float uTime;
-        uniform float uPixelRatio;
-        varying float vAlpha;
-
-        void main() {
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          float size = aSize * 2.0;
-          float twinkle = 0.75 + 0.25 * sin(uTime * 1.5 + aPhase);
-          gl_PointSize = size * twinkle * uPixelRatio * (300.0 / -mvPosition.z);
-          vAlpha = 0.9 * twinkle;
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: /* glsl */`
-        varying float vAlpha;
-        void main() {
-          vec2 p = gl_PointCoord - 0.5;
-          float d = dot(p, p);
-          float mask = step(0.0, 0.5 - d); // Maximum sharpness - stars are perfect circles
-          gl_FragColor = vec4(vec3(1.0), vAlpha * mask);
-        }
-      `
+      opacity: 0.9,
+      sizeAttenuation: true
     });
 
     return { geometry, material };
   }, []);
 
-  // Animation loop
-  useFrame((state) => {
-    // Removed twinkling animation - stars stay static
-    // if (starMaterialRef.current) {
-    //   starMaterialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    // }
-    
-    // Keep stars in fixed position instead of following camera
-    // if (starsRef.current) {
-    //   starsRef.current.position.copy(state.camera.position);
-    // }
-  });
-
-  return (
-    <points ref={starsRef} geometry={geometry}>
-      <primitive object={material} ref={starMaterialRef} />
-    </points>
-  );
+  return <points geometry={geometry} material={material} />;
 };
 
-// GLB Model component
-const AstronautModel = () => {
+// Character component that will be the center focal point
+const Character = ({ rotation, position }) => {
   const { scene } = useGLTF('/models/astronaut-1.glb');
-  
-  // Clone the scene to avoid issues with multiple instances
   const modelRef = useRef();
   
   useMemo(() => {
     if (scene) {
-      // Scale and position the model appropriately
-      scene.scale.setScalar(1); // Adjust scale as needed
+      scene.scale.setScalar(1);
       scene.position.set(0, 0, 0);
-      scene.rotation.y = Math.PI; // Rotate 180 degrees
+      scene.rotation.y = Math.PI;
     }
   }, [scene]);
 
-  return <primitive ref={modelRef} object={scene} />;
+  useFrame(() => {
+    if (modelRef.current && scene) {
+      // Create a quaternion for the character's rotation
+      const quaternion = new THREE.Quaternion();
+      
+      // Apply rotations in the same order as the camera calculations
+      // First rotate around Y (yaw)
+      const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotation.y);
+      quaternion.multiply(yawQuat);
+      
+      // Then rotate around X (pitch) - but in the rotated coordinate system
+      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rotation.x);
+      quaternion.multiply(pitchQuat);
+      
+      // Apply the initial model orientation (facing forward)
+      const initialQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+      quaternion.multiply(initialQuat);
+      
+      // Apply the quaternion to the scene
+      scene.quaternion.copy(quaternion);
+      
+      // Set position
+      scene.position.set(position.x, position.y, position.z);
+    }
+  });
+
+  return (
+    <group>
+      <primitive ref={modelRef} object={scene} />
+    </group>
+  );
 };
 
-// Asteroid component
-const Asteroid = ({ position, rotation, scale, index }) => {
-  const { scene } = useGLTF('/models/asteroid.glb');
-  
-  const clonedScene = useMemo(() => {
-    if (scene) {
-      const clone = scene.clone();
-      clone.position.set(...position);
-      clone.rotation.set(...rotation);
-      clone.scale.setScalar(scale);
-      
-      // Ensure all meshes in the scene have materials
-      clone.traverse((child) => {
-        if (child.isMesh) {
-          // Force all meshes to use our white material
-          child.material = new THREE.MeshStandardMaterial({ 
-            color: 'white', 
-            roughness: 0.8,
-            metalness: 0.1
-          });
-        }
-      });
-      
-      console.log(`Asteroid ${index} loaded at:`, position, 'scale:', scale);
-      return clone;
-    }
-    return null;
-  }, [scene, position, rotation, scale, index]);
+// Third person camera that follows the character
+const ThirdPersonCamera = ({ characterRotation, characterPosition }) => {
+  useFrame((state) => {
+    const camera = state.camera;
+    const cameraDistance = 15;
+    
+    // Calculate camera position behind the character using consistent math
+    const cosX = Math.cos(characterRotation.x);
+    const sinX = Math.sin(characterRotation.x);
+    const cosY = Math.cos(characterRotation.y);
+    const sinY = Math.sin(characterRotation.y);
+    
+    // Camera position behind character - use the opposite of the forward vector
+    // Character forward: (-sinY * cosX, sinX, -cosY * cosX)
+    // Camera behind: (sinY * cosX, -sinX, cosY * cosX)
+    const cameraX = characterPosition.x + sinY * cosX * cameraDistance;
+    const cameraY = characterPosition.y - sinX * cameraDistance;
+    const cameraZ = characterPosition.z + cosY * cosX * cameraDistance;
+    
+    camera.position.set(cameraX, cameraY, cameraZ);
+    
+    // Look at the character's position
+    // This ensures the camera is always looking at the character
+    camera.lookAt(characterPosition.x, characterPosition.y, characterPosition.z);
+  });
 
-  if (!clonedScene) return null;
-  
-  return <primitive object={clonedScene} />;
+  return null;
 };
 
 // Base component for the two bases
 const Base = ({ position, color, size = [40, 20, 40] }) => {
-  console.log(`Creating base at position:`, position, `with color:`, color);
   return (
     <mesh position={position}>
       <boxGeometry args={size} />
@@ -163,138 +136,248 @@ const Base = ({ position, color, size = [40, 20, 40] }) => {
   );
 };
 
-// Asteroid field component
-const AsteroidField = () => {
-  const asteroids = useMemo(() => {
-    const asteroidCount = 15;
-    const asteroids = [];
+// Data provider component that runs inside Canvas
+const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) => {
+  useFrame((state) => {
+    const camera = state.camera;
     
-    console.log('Generating asteroid positions...');
+    // Calculate camera rotation using the exact same math as the camera positioning
+    // This ensures perfect consistency between calculated rotation and actual camera behavior
+    const cosX = Math.cos(characterRotation.x);
+    const sinX = Math.sin(characterRotation.x);
+    const cosY = Math.cos(characterRotation.y);
+    const sinY = Math.sin(characterRotation.y);
     
-    for (let i = 0; i < asteroidCount; i++) {
-      const x = (Math.random() - 0.5) * 150;
-      const y = (Math.random() - 0.5) * 150;
-      const z = (Math.random() - 0.5) * 150;
-      const scale = 4 + Math.random() * 5;
-      const rotationX = Math.random() * Math.PI * 2;
-      const rotationY = Math.random() * Math.PI * 2;
-      const rotationZ = Math.random() * Math.PI * 2;
-      
-      asteroids.push({
-        position: [x, y, z],
-        rotation: [rotationX, rotationY, rotationZ],
-        scale: scale
-      });
-      
-      console.log(`Asteroid ${i}: pos [${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}], scale: ${scale.toFixed(1)}`);
-    }
+    // Camera rotation should match the direction it's looking
+    // The camera looks in the direction: (sinY * cosX, sinX, cosY * cosX)
+    const cameraRotationX = Math.asin(sinX); // Pitch
+    const cameraRotationY = Math.atan2(sinY * cosX, cosY * cosX); // Yaw
     
-    return asteroids;
-  }, []);
+    const cameraData = {
+      position: [
+        Math.round(camera.position.x),
+        Math.round(camera.position.y),
+        Math.round(camera.position.z)
+      ],
+      rotation: [
+        Math.round(cameraRotationX * 180 / Math.PI),
+        Math.round(cameraRotationY * 180 / Math.PI),
+        0 // No roll
+      ],
+      fov: Math.round(camera.fov)
+    };
+    
+    // Character position is now dynamic based on movement
+    const characterData = {
+      position: [
+        Math.round(characterPosition.x),
+        Math.round(characterPosition.y),
+        Math.round(characterPosition.z)
+      ],
+      rotation: [
+        Math.round(characterRotation.x * 180 / Math.PI),
+        Math.round(characterRotation.y * 180 / Math.PI),
+        Math.round(characterRotation.z * 180 / Math.PI)
+      ],
+      status: 'ACTIVE'
+    };
+    
+    onDataUpdate({ camera: cameraData, character: characterData });
+  });
+  
+  return null; // This component doesn't render anything
+};
 
+// Combined monitor component
+const Monitor = ({ data }) => {
+  if (!data) return null;
+  
   return (
     <>
-      {asteroids.map((asteroid, index) => (
-        <Asteroid 
-          key={index}
-          index={index}
-          position={asteroid.position}
-          rotation={asteroid.rotation}
-          scale={asteroid.scale}
-        />
-      ))}
+      {/* Astronaut Monitor */}
+      <div className="absolute bottom-4 left-4 z-10 bg-black/70 text-white p-3 rounded-lg font-mono text-xs backdrop-blur-sm border border-white/20">
+        <div className="space-y-1">
+          <div className="text-blue-400 font-semibold">ASTRONAUT MONITOR</div>
+          <div>POS: [{data.character.position[0]}, {data.character.position[1]}, {data.character.position[2]}]</div>
+          <div>ROT: [{data.character.rotation[0]}°, {data.character.rotation[1]}°, {data.character.rotation[2]}°]</div>
+          <div>STATUS: {data.character.status}</div>
+        </div>
+      </div>
+
+      {/* Camera Monitor */}
+      <div className="absolute bottom-4 right-4 z-10 bg-black/70 text-white p-3 rounded-lg font-mono text-xs backdrop-blur-sm border border-white/20">
+        <div className="space-y-1">
+          <div className="text-green-400 font-semibold">CAMERA MONITOR</div>
+          <div>POS: [{data.camera.position[0]}, {data.camera.position[1]}, {data.camera.position[2]}]</div>
+          <div>ROT: [{data.camera.rotation[0]}°, {data.camera.rotation[1]}°, {data.camera.rotation[2]}°]</div>
+          <div>FOV: {data.camera.fov}°</div>
+        </div>
+      </div>
     </>
   );
 };
 
-// Camera with GLB model child
-const CameraWithModel = () => {
-  const cameraRef = useRef();
-  
-  useFrame((state) => {
-    if (cameraRef.current) {
-      // Update the model position to always be in front of camera
-      const camera = state.camera;
-      const distance = 15;
-      
-      // Calculate position in front of camera
-      const direction = new THREE.Vector3(0, 0, -1);
-      direction.applyQuaternion(camera.quaternion);
-      
-      cameraRef.current.position.copy(camera.position);
-      cameraRef.current.position.add(direction.multiplyScalar(distance));
-      
-      // Make the model face the same direction as the camera
-      cameraRef.current.rotation.copy(camera.rotation);
-    }
-  });
-
-  return (
-    <group ref={cameraRef}>
-      {/* GLB model as child of camera */}
-      <AstronautModel />
-    </group>
-  );
-};
-
 const Game = ({ onBackToMenu }) => {
+  const [monitorData, setMonitorData] = useState(null);
+  const [characterRotation, setCharacterRotation] = useState({ x: 0, y: 0, z: 0 });
+  const [characterVelocity, setCharacterVelocity] = useState({ x: 0, y: 0, z: 0 });
+  const [characterPosition, setCharacterPosition] = useState({ x: 0, y: 0, z: 0 });
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [lastMouseX, setLastMouseX] = useState(0);
+  const [lastMouseY, setLastMouseY] = useState(0);
+
+  // Handle mouse controls for character rotation
+  const handleMouseDown = (e) => {
+    setIsMouseDown(true);
+    setLastMouseX(e.clientX);
+    setLastMouseY(e.clientY);
+  };
+
+  const handleMouseUp = () => {
+    setIsMouseDown(false);
+  };
+
+  const handleMouseMove = (e) => {
+    if (isMouseDown) {
+      const deltaX = e.clientX - lastMouseX;
+      const deltaY = e.clientY - lastMouseY;
+      const sensitivity = 0.01; // Adjust this for rotation speed
+      
+      setCharacterRotation(prev => {
+        // Calculate new pitch (X rotation) with bounds
+        const newPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, prev.x - deltaY * sensitivity));
+        
+        // For yaw (Y rotation), we need to apply it in the camera's coordinate system
+        // This means we need to account for the current pitch when calculating yaw
+        const newYaw = prev.y - deltaX * sensitivity;
+        
+        return {
+          x: newPitch,
+          y: newYaw,
+          z: 0 // No roll
+        };
+      });
+      
+      setLastMouseX(e.clientX);
+      setLastMouseY(e.clientY);
+    }
+  };
+
+  // Handle keyboard controls for thrust
+  const handleKeyDown = (e) => {
+    const thrustPower = 0.5;
+    
+    const cosY = Math.cos(characterRotation.y);
+    const sinY = Math.sin(characterRotation.y);
+    const cosX = Math.cos(characterRotation.x);
+    const sinX = Math.sin(characterRotation.x);
+    
+    // Direction vectors
+    const forward = { x: -sinY * cosX, y: sinX, z: -cosY * cosX };
+    const right = { x: forward.z, y: 0, z: -forward.x }; // Simplified right vector
+    const up = { x: cosY * sinX, y: -cosX, z: sinY * sinX };
+    
+    // Thrust multipliers for each direction
+    const thrusts = {
+      'w': forward,    // Forward
+      's': { x: -forward.x, y: -forward.y, z: -forward.z }, // Backward
+      'a': right,      // Left
+      'd': { x: -right.x, y: -right.y, z: -right.z },       // Right
+      'q': up,         // Up
+      'e': { x: -up.x, y: -up.y, z: -up.z }                 // Down
+    };
+    
+    const key = e.key.toLowerCase();
+    if (thrusts[key]) {
+      setCharacterVelocity(prev => ({
+        x: prev.x + thrusts[key].x * thrustPower,
+        y: prev.y + thrusts[key].y * thrustPower,
+        z: prev.z + thrusts[key].z * thrustPower
+      }));
+    } else if (key === ' ') {
+      setCharacterVelocity({ x: 0, y: 0, z: 0 });
+    }
+  };
+
+  // Add keyboard event listeners
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [characterRotation]);
+
+  // Add mouse event listeners
+  useEffect(() => {
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mousemove', handleMouseMove);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [isMouseDown, lastMouseX, lastMouseY]);
+
+  // Physics update loop
+  useEffect(() => {
+    const physicsInterval = setInterval(() => {
+      setCharacterPosition(prev => {
+        const newPos = {
+          x: prev.x + characterVelocity.x,
+          y: prev.y + characterVelocity.y,
+          z: prev.z + characterVelocity.z
+        };
+        
+        // Boundary check - prevent character from going too far
+        const maxDistance = 400;
+        
+        return {
+          x: Math.max(-maxDistance, Math.min(maxDistance, newPos.x)),
+          y: Math.max(-maxDistance, Math.min(maxDistance, newPos.y)),
+          z: Math.max(-maxDistance, Math.min(maxDistance, newPos.z))
+        };
+      });
+    }, 16);
+
+    return () => clearInterval(physicsInterval);
+  }, [characterVelocity]);
+
   return (
     <div className="w-full h-full bg-black">
       <Canvas
-        camera={{ position: [0, 0, 20], fov: 75, near: 0.1, far: 1000 }}
+        camera={{ position: [0, 0, 15], fov: 75, near: 0.1, far: 1000 }}
         className="w-full h-full"
-        gl={{ 
-          antialias: true,
-          outputColorSpace: THREE.SRGBColorSpace 
-        }}
-        onCreated={({ gl, camera }) => {
+        gl={{ antialias: true, outputColorSpace: THREE.SRGBColorSpace }}
+        onCreated={({ gl }) => {
           gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         }}
       >
-        {/* Lighting to see the white box */}
         <ambientLight intensity={0.6} />
         <directionalLight position={[-100, 50, 0]} intensity={2.0} target-position={[110, 0, 0]} />
         <directionalLight position={[100, 50, 0]} intensity={2.0} target-position={[-110, 0, 0]} />
         
-        {/* Sophisticated starfield with custom shaders */}
         <Starfield />
         
-        {/* Asteroid field */}
-        <AsteroidField />
-        
-        {/* Two bases at opposite ends */}
         <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
         <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
         
-        {/* Camera with GLB model child */}
-        <CameraWithModel />
+        <mesh position={[0, 0, -20]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="white" />
+        </mesh>
         
-        {/* Simple orbit controls */}
-        <OrbitControls 
-          enablePan={true}
-          enableZoom={true}
-          enableRotate={true}
-          minDistance={5}
-          maxDistance={100}
-        />
+        <Character rotation={characterRotation} position={characterPosition} />
+        <ThirdPersonCamera characterRotation={characterRotation} characterPosition={characterPosition} />
+        <DataProvider onDataUpdate={setMonitorData} characterRotation={characterRotation} characterPosition={characterPosition} />
       </Canvas>
       
-      {/* Back to Menu Button */}
-      <div className="absolute top-4 right-4 z-10">
-        <button
-          onClick={onBackToMenu}
-          className="px-4 py-2 text-sm font-medium text-white bg-black/50 hover:bg-black/70 rounded-lg transition-all duration-200 border border-white/20 backdrop-blur-sm"
-        >
-          ← Back to Menu
-        </button>
-      </div>
+
       
-      {/* Simple Controls Instructions */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 text-center">
-        <p className="text-white text-sm bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm">
-          Left click + drag: Rotate • Right click + drag: Pan • Scroll: Zoom
-        </p>
-      </div>
+      {/* Combined Monitor */}
+      <Monitor data={monitorData} />
     </div>
   );
 };

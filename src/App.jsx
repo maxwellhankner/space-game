@@ -17,9 +17,22 @@ function App() {
   return (
     <div className="w-full h-full">
       {/* Persistent Audio Player - stays mounted across all game states */}
-      <div className="fixed top-4 left-4 z-50">
+      <div className="fixed top-4 left-8 z-50">
         <AudioPlayer />
       </div>
+      
+      {/* Back to Menu Button - positioned on the right */}
+      {gameStarted && (
+        <div className="fixed top-4 right-8 z-50 h-10 flex items-center">
+          <button
+            onClick={handleBackToMenu}
+            className="text-sm font-medium hover:opacity-80 transition-opacity cursor-pointer"
+            style={{ color: '#008f11' }}
+          >
+            MENU
+          </button>
+        </div>
+      )}
       
       {gameStarted ? (
         <Game onBackToMenu={handleBackToMenu} />
