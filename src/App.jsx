@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import StartScreen from './components/StartScreen';
 import Game from './components/Game';
 import AudioPlayer from './components/AudioPlayer';
+import { AudioProvider } from './context/AudioContext';
 
 function App() {
   const [gameStarted, setGameStarted] = useState(false);
@@ -15,31 +16,33 @@ function App() {
   };
 
   return (
-    <div className="w-full h-full">
-      {/* Persistent Audio Player - stays mounted across all game states */}
-      <div className="fixed top-4 left-8 z-50">
-        <AudioPlayer />
+    <AudioProvider>
+      <div className="w-full h-full">
+        {/* Back to Menu Button - positioned on the right */}
+        {gameStarted && (
+          <div className="fixed top-4 right-8 z-50 h-10 flex items-center">
+            <button
+              onClick={handleBackToMenu}
+              className="text-sm font-medium hover:opacity-80 transition-opacity cursor-pointer"
+              style={{ color: '#008f11' }}
+            >
+              MENU
+            </button>
+          </div>
+        )}
+        
+        {gameStarted ? (
+          <>
+            <div className="fixed top-6 left-8 z-50">
+              <AudioPlayer />
+            </div>
+            <Game onBackToMenu={handleBackToMenu} />
+          </>
+        ) : (
+          <StartScreen onStartGame={handleStartGame} />
+        )}
       </div>
-      
-      {/* Back to Menu Button - positioned on the right */}
-      {gameStarted && (
-        <div className="fixed top-4 right-8 z-50 h-10 flex items-center">
-          <button
-            onClick={handleBackToMenu}
-            className="text-sm font-medium hover:opacity-80 transition-opacity cursor-pointer"
-            style={{ color: '#008f11' }}
-          >
-            MENU
-          </button>
-        </div>
-      )}
-      
-      {gameStarted ? (
-        <Game onBackToMenu={handleBackToMenu} />
-      ) : (
-        <StartScreen onStartGame={handleStartGame} />
-      )}
-    </div>
+    </AudioProvider>
   );
 }
 

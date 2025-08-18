@@ -287,6 +287,12 @@ const Game = ({ onBackToMenu }) => {
 
   // Handle keyboard controls for thrust and rotation
   const handleKeyDown = (e) => {
+    // Handle Escape key
+    if (e.key === 'Escape') {
+      onBackToMenu();
+      return;
+    }
+
     const thrustPower = 0.25;
     const rotationSpeed = 0.1; // Adjust this for rotation speed
     

@@ -1,30 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
+import { useAudio } from '../context/AudioContext';
 
 const AudioPlayer = () => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(0.5);
-  const audioRef = useRef(null);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  const togglePlay = () => {
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play();
-      setIsPlaying(true);
-    }
-  };
-
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-  };
+  const { isPlaying, volume, togglePlay, handleVolumeChange } = useAudio();
 
   return (
     <div className="flex items-center justify-center space-x-4">
@@ -51,18 +29,10 @@ const AudioPlayer = () => {
           step="0.1"
           value={volume}
           onChange={handleVolumeChange}
-          className="w-20 h-2 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:bg-[#008f11] bg-white/10"
+          className="w-20 h-2 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:bg-[#008f11]"
+          style={{ backgroundColor: '#1a1a1a' }}
         />
       </div>
-      
-      <audio
-        ref={audioRef}
-        loop
-        preload="auto"
-      >
-        <source src="/audio/Arnyd - Polaris [SpaceAmbient].mp3" type="audio/mpeg" />
-        Your browser does not support the audio element.
-      </audio>
     </div>
   );
 };
