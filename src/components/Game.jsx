@@ -218,12 +218,25 @@ const Base = ({ position, color, size = [40, 20, 40] }) => {
   );
 };
 
+// Sphere component for navigation markers
+const Sphere = ({ position, color, radius = 8, segments = 16 }) => {
+  return (
+    <mesh position={position}>
+      <sphereGeometry args={[radius, segments, segments]} />
+      <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
+    </mesh>
+  );
+};
+
 // Data provider component that runs inside Canvas
 const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) => {
   useFrame((state) => {
     const camera = state.camera;
     
-    // Camera is now stationary, so we can get its fixed position and rotation
+    // Convert quaternion to Euler angles for display using the same rotation order as CameraRotationSync
+    const euler = new THREE.Euler();
+    euler.setFromQuaternion(camera.quaternion, 'YXZ'); // Y (yaw) → X (pitch) → Z (roll)
+    
     const cameraData = {
       position: [
         Math.round(camera.position.x),
@@ -231,9 +244,9 @@ const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) =>
         Math.round(camera.position.z)
       ],
       rotation: [
-        Math.round(camera.rotation.x * 180 / Math.PI),
-        Math.round(camera.rotation.y * 180 / Math.PI),
-        Math.round(camera.rotation.z * 180 / Math.PI)
+        Math.round(euler.x * 180 / Math.PI),
+        Math.round(euler.y * 180 / Math.PI),
+        Math.round(euler.z * 180 / Math.PI)
       ],
       fov: Math.round(camera.fov)
     };
@@ -450,41 +463,13 @@ const Game = ({ onBackToMenu }) => {
         <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
         <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
         
-        {/* Left sphere - Red */}
-        <mesh position={[-30, 0, 0]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#ff4444" />
-        </mesh>
-        
-        {/* Right sphere - Blue */}
-        <mesh position={[0, 0, -30]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#4444ff" />
-        </mesh>
-        
-        {/* Top sphere - Green */}
-        <mesh position={[0, 30, 0]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#44ff44" />
-        </mesh>
-        
-        {/* Bottom sphere - Yellow */}
-        <mesh position={[0, -30, 0]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#ffff44" />
-        </mesh>
-        
-        {/* Front sphere - Purple */}
-        <mesh position={[30, 0, 0]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#ff44ff" />
-        </mesh>
-        
-        {/* Back sphere - Orange */}
-        <mesh position={[0, 0, 30]}>
-          <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="#ff8844" />
-        </mesh>
+        {/* Navigation spheres using the Sphere component */}
+        <Sphere position={[-30, 0, 0]} color="#ff4444" />
+        <Sphere position={[0, 0, -30]} color="#4444ff" />
+        <Sphere position={[0, 30, 0]} color="#44ff44" />
+        <Sphere position={[0, -30, 0]} color="#ffff44" />
+        <Sphere position={[30, 0, 0]} color="#ff44ff" />
+        <Sphere position={[0, 0, 30]} color="#ff8844" />
         
         <Character rotation={characterRotation} position={characterPosition} />
         
