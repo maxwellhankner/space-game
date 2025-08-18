@@ -78,6 +78,10 @@ const Character = ({ rotation, position }) => {
       const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rotation.x);
       quaternion.multiply(pitchQuat);
       
+      // Then rotate around Z (roll) - add the missing Z rotation
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotation.z);
+      quaternion.multiply(rollQuat);
+      
       // Apply the initial model orientation (facing forward)
       const initialQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
       quaternion.multiply(initialQuat);
@@ -97,33 +101,111 @@ const Character = ({ rotation, position }) => {
   );
 };
 
-// Third person camera that follows the character
-const ThirdPersonCamera = ({ characterRotation, characterPosition }) => {
+// Simple component that copies character rotation to camera
+const CameraRotationSync = ({ characterRotation, characterPosition }) => {
   useFrame((state) => {
     const camera = state.camera;
-    const cameraDistance = 15;
     
-    // Calculate camera position behind the character using consistent math
-    const cosX = Math.cos(characterRotation.x);
-    const sinX = Math.sin(characterRotation.x);
+    // Create a quaternion for the camera's rotation (same as character)
+    const quaternion = new THREE.Quaternion();
+    
+    // Apply rotations in the same order as the character
+    // First rotate around Y (yaw)
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), characterRotation.y);
+    quaternion.multiply(yawQuat);
+    
+    // Then rotate around X (pitch)
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), characterRotation.x);
+    quaternion.multiply(pitchQuat);
+    
+    // Then rotate around Z (roll)
+    const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), characterRotation.z);
+    quaternion.multiply(rollQuat);
+    
+    // Apply the quaternion to the camera
+    camera.quaternion.copy(quaternion);
+    
+    // Calculate position to always be behind the character
+    // Character's forward direction: (-sinY * cosX, sinX, -cosY * cosX)
+    // Camera behind: opposite of forward direction
     const cosY = Math.cos(characterRotation.y);
     const sinY = Math.sin(characterRotation.y);
+    const cosX = Math.cos(characterRotation.x);
+    const sinX = Math.sin(characterRotation.x);
     
-    // Camera position behind character - use the opposite of the forward vector
-    // Character forward: (-sinY * cosX, sinX, -cosY * cosX)
-    // Camera behind: (sinY * cosX, -sinX, cosY * cosX)
-    const cameraX = characterPosition.x + sinY * cosX * cameraDistance;
-    const cameraY = characterPosition.y - sinX * cameraDistance;
-    const cameraZ = characterPosition.z + cosY * cosX * cameraDistance;
+    // Camera distance behind character
+    const cameraDistance = 15;
+    
+    // Calculate backward vector (opposite of forward)
+    const backwardX = sinY * cosX;
+    const backwardY = -sinX;
+    const backwardZ = cosY * cosX;
+    
+    // Position camera behind character
+    const cameraX = characterPosition.x + backwardX * cameraDistance;
+    const cameraY = characterPosition.y + backwardY * cameraDistance;
+    const cameraZ = characterPosition.z + backwardZ * cameraDistance;
     
     camera.position.set(cameraX, cameraY, cameraZ);
-    
-    // Look at the character's position
-    // This ensures the camera is always looking at the character
-    camera.lookAt(characterPosition.x, characterPosition.y, characterPosition.z);
   });
-
+  
   return null;
+};
+
+// Component that applies character rotation to cube using quaternions
+const CubeRotationSync = ({ characterRotation, characterPosition }) => {
+  const cubeRef = useRef();
+  
+  useFrame(() => {
+    if (cubeRef.current) {
+      // Create a quaternion for the cube's rotation (same as character)
+      const quaternion = new THREE.Quaternion();
+      
+      // Apply rotations in the same order as the character
+      // First rotate around Y (yaw)
+      const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), characterRotation.y);
+      quaternion.multiply(yawQuat);
+      
+      // Then rotate around X (pitch)
+      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), characterRotation.x);
+      quaternion.multiply(pitchQuat);
+      
+      // Then rotate around Z (roll)
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), characterRotation.z);
+      quaternion.multiply(rollQuat);
+      
+      // Apply the quaternion to the cube
+      cubeRef.current.quaternion.copy(quaternion);
+      
+      // Calculate position to always be to the right of the character
+      // Character's right vector is perpendicular to their forward direction
+      // Forward: (-sinY * cosX, sinX, -cosY * cosX)
+      // Right: (cosY, 0, -sinY) - simplified right vector
+      const cosY = Math.cos(characterRotation.y);
+      const sinY = Math.sin(characterRotation.y);
+      
+      // Offset distance from character
+      const offsetDistance = 3;
+      
+      // Calculate right vector (perpendicular to forward direction)
+      const rightX = cosY;
+      const rightZ = -sinY;
+      
+      // Position cube to the right of character
+      const cubeX = characterPosition.x + rightX * offsetDistance;
+      const cubeY = characterPosition.y; // Same height as character
+      const cubeZ = characterPosition.z + rightZ * offsetDistance;
+      
+      cubeRef.current.position.set(cubeX, cubeY, cubeZ);
+    }
+  });
+  
+  return (
+    <mesh ref={cubeRef}>
+      <boxGeometry args={[0.5, 5, 5]} />
+      <meshStandardMaterial color="#ffaa00" />
+    </mesh>
+  );
 };
 
 // Base component for the two bases
@@ -141,18 +223,7 @@ const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) =>
   useFrame((state) => {
     const camera = state.camera;
     
-    // Calculate camera rotation using the exact same math as the camera positioning
-    // This ensures perfect consistency between calculated rotation and actual camera behavior
-    const cosX = Math.cos(characterRotation.x);
-    const sinX = Math.sin(characterRotation.x);
-    const cosY = Math.cos(characterRotation.y);
-    const sinY = Math.sin(characterRotation.y);
-    
-    // Camera rotation should match the direction it's looking
-    // The camera looks in the direction: (sinY * cosX, sinX, cosY * cosX)
-    const cameraRotationX = Math.asin(sinX); // Pitch
-    const cameraRotationY = Math.atan2(sinY * cosX, cosY * cosX); // Yaw
-    
+    // Camera is now stationary, so we can get its fixed position and rotation
     const cameraData = {
       position: [
         Math.round(camera.position.x),
@@ -160,9 +231,9 @@ const DataProvider = ({ onDataUpdate, characterRotation, characterPosition }) =>
         Math.round(camera.position.z)
       ],
       rotation: [
-        Math.round(cameraRotationX * 180 / Math.PI),
-        Math.round(cameraRotationY * 180 / Math.PI),
-        0 // No roll
+        Math.round(camera.rotation.x * 180 / Math.PI),
+        Math.round(camera.rotation.y * 180 / Math.PI),
+        Math.round(camera.rotation.z * 180 / Math.PI)
       ],
       fov: Math.round(camera.fov)
     };
@@ -201,6 +272,7 @@ const Monitor = ({ data }) => {
           <div>POS: [{data.character.position[0]}, {data.character.position[1]}, {data.character.position[2]}]</div>
           <div>ROT: [{data.character.rotation[0]}°, {data.character.rotation[1]}°, {data.character.rotation[2]}°]</div>
           <div>STATUS: {data.character.status}</div>
+          <div className="text-yellow-400 text-xs">Raw: X:{data.character.rotation[0].toFixed(2)}° Y:{data.character.rotation[1].toFixed(2)}° Z:{data.character.rotation[2].toFixed(2)}°</div>
         </div>
       </div>
 
@@ -211,6 +283,7 @@ const Monitor = ({ data }) => {
           <div>POS: [{data.camera.position[0]}, {data.camera.position[1]}, {data.camera.position[2]}]</div>
           <div>ROT: [{data.camera.rotation[0]}°, {data.camera.rotation[1]}°, {data.camera.rotation[2]}°]</div>
           <div>FOV: {data.camera.fov}°</div>
+          <div className="text-yellow-400 text-xs">Raw: X:{data.camera.rotation[0].toFixed(2)}° Y:{data.camera.rotation[1].toFixed(2)}° Z:{data.camera.rotation[2].toFixed(2)}°</div>
         </div>
       </div>
     </>
@@ -244,8 +317,8 @@ const Game = ({ onBackToMenu }) => {
       const sensitivity = 0.01; // Adjust this for rotation speed
       
       setCharacterRotation(prev => {
-        // Calculate new pitch (X rotation) with bounds
-        const newPitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, prev.x - deltaY * sensitivity));
+        // Calculate new pitch (X rotation) - no bounds, can look up as much as you want!
+        const newPitch = prev.x - deltaY * sensitivity;
         
         // For yaw (Y rotation), we need to apply it in the camera's coordinate system
         // This means we need to account for the current pitch when calculating yaw
@@ -263,9 +336,10 @@ const Game = ({ onBackToMenu }) => {
     }
   };
 
-  // Handle keyboard controls for thrust
+  // Handle keyboard controls for thrust and rotation
   const handleKeyDown = (e) => {
     const thrustPower = 0.5;
+    const rotationSpeed = 0.1; // Adjust this for rotation speed
     
     const cosY = Math.cos(characterRotation.y);
     const sinY = Math.sin(characterRotation.y);
@@ -296,6 +370,18 @@ const Game = ({ onBackToMenu }) => {
       }));
     } else if (key === ' ') {
       setCharacterVelocity({ x: 0, y: 0, z: 0 });
+    } else if (key === 'r') {
+      // R key - roll left (negative Z rotation)
+      setCharacterRotation(prev => ({
+        ...prev,
+        z: prev.z - rotationSpeed
+      }));
+    } else if (key === 'f') {
+      // F key - roll right (positive Z rotation)
+      setCharacterRotation(prev => ({
+        ...prev,
+        z: prev.z + rotationSpeed
+      }));
     }
   };
 
@@ -364,17 +450,52 @@ const Game = ({ onBackToMenu }) => {
         <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
         <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
         
-        <mesh position={[0, 0, -20]}>
+        {/* Left sphere - Red */}
+        <mesh position={[-30, 0, 0]}>
           <sphereGeometry args={[8, 16, 16]} />
-          <meshStandardMaterial color="white" />
+          <meshStandardMaterial color="#ff4444" />
+        </mesh>
+        
+        {/* Right sphere - Blue */}
+        <mesh position={[0, 0, -30]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="#4444ff" />
+        </mesh>
+        
+        {/* Top sphere - Green */}
+        <mesh position={[0, 30, 0]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="#44ff44" />
+        </mesh>
+        
+        {/* Bottom sphere - Yellow */}
+        <mesh position={[0, -30, 0]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="#ffff44" />
+        </mesh>
+        
+        {/* Front sphere - Purple */}
+        <mesh position={[30, 0, 0]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="#ff44ff" />
+        </mesh>
+        
+        {/* Back sphere - Orange */}
+        <mesh position={[0, 0, 30]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshStandardMaterial color="#ff8844" />
         </mesh>
         
         <Character rotation={characterRotation} position={characterPosition} />
-        <ThirdPersonCamera characterRotation={characterRotation} characterPosition={characterPosition} />
+        
+        {/* Cube rotation sync using quaternions like the character */}
+        <CubeRotationSync characterRotation={characterRotation} characterPosition={characterPosition} />
+        
+        {/* Camera rotation sync using quaternions like the character */}
+        <CameraRotationSync characterRotation={characterRotation} characterPosition={characterPosition} />
+        
         <DataProvider onDataUpdate={setMonitorData} characterRotation={characterRotation} characterPosition={characterPosition} />
       </Canvas>
-      
-
       
       {/* Combined Monitor */}
       <Monitor data={monitorData} />

@@ -2,13 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  background-color: black;
+}
+
 body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+  background-color: black;
 }
 
 #root {
   width: 100vw;
   height: 100vh;
+  background-color: black;
+}
+
+/* Ensure loading screen is hidden when game is loaded */
+#root:not(:empty) ~ #loading-screen {
+  display: none !important;
+}
+
+/* Additional fallback to prevent any white flashing */
+* {
+  background-color: black;
+}
+
+/* Override for specific elements that need their own backgrounds */
+#root * {
+  background-color: initial;
+}
+
+/* Make loading text invisible but keep the black background */
+#loading-screen {
+  color: transparent;
+  animation: fadeOut 0.1s ease-in-out 0.5s forwards;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
 }

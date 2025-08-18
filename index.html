@@ -1,13 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="background-color: black;">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + React</title>
+    <style>
+      /* Immediate loading screen to prevent white flash */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: black;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-family: Arial, sans-serif;
+        font-size: 18px;
+      }
+      
+      /* Hide loading screen when React loads */
+      #root:not(:empty) + #loading-screen {
+        display: none;
+      }
+    </style>
   </head>
-  <body>
+  <body style="background-color: black; margin: 0; padding: 0;">
     <div id="root"></div>
+    <div id="loading-screen">Loading Space Game...</div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
