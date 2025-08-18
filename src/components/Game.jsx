@@ -334,8 +334,8 @@ const Monitor = ({ data }) => {
   );
 };
 
-const Game = ({ onBackToMenu }) => {
-  const [monitorData, setMonitorData] = useState(null);
+// Custom hook for movement controls
+const useMovementControls = (onBackToMenu) => {
   const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
   const [characterVelocity, setCharacterVelocity] = useState({ x: 0, y: 0, z: 0 });
   const [characterPosition, setCharacterPosition] = useState({ x: 0, y: 0, z: 0 });
@@ -343,11 +343,24 @@ const Game = ({ onBackToMenu }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [lastMouseX, setLastMouseX] = useState(0);
   const [lastMouseY, setLastMouseY] = useState(0);
-  const [isColliding, setIsColliding] = useState(false);
   const [collisionPoint, setCollisionPoint] = useState(null);
   const [collisionRadius, setCollisionRadius] = useState(0);
 
-  // Handle mouse controls for character rotation
+  const calculateDirectionVectors = (quaternion) => {
+    const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+    const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+    const upVector = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+
+    return {
+      forward: { x: forwardVector.x, y: forwardVector.y, z: forwardVector.z },
+      backward: { x: -forwardVector.x, y: -forwardVector.y, z: -forwardVector.z },
+      right: { x: rightVector.x, y: rightVector.y, z: rightVector.z },
+      left: { x: -rightVector.x, y: -rightVector.y, z: -rightVector.z },
+      up: { x: upVector.x, y: upVector.y, z: upVector.z },
+      down: { x: -upVector.x, y: -upVector.y, z: -upVector.z }
+    };
+  };
+
   const handleMouseDown = (e) => {
     setIsMouseDown(true);
     setLastMouseX(e.clientX);
@@ -362,20 +375,25 @@ const Game = ({ onBackToMenu }) => {
     if (isMouseDown) {
       const deltaX = e.clientX - lastMouseX;
       const deltaY = e.clientY - lastMouseY;
-      const sensitivity = 0.01; // Adjust this for rotation speed
+      
+      // Reduced sensitivity for smoother movement
+      const sensitivity = 0.003;
       
       setCharacterQuaternion(prev => {
-        // Create a new quaternion for the rotation changes
         const newQuaternion = prev.clone();
         
-        // Create rotation quaternions for pitch (X) and yaw (Y)
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deltaY * sensitivity);
-        const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sensitivity);
+        // Create and normalize rotation quaternions
+        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(1, 0, 0), 
+          -deltaY * sensitivity
+        );
+        const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0), 
+          -deltaX * sensitivity
+        );
         
-        // Apply pitch first, then yaw (same order as before)
-        newQuaternion.multiply(pitchQuat);
-        newQuaternion.multiply(yawQuat);
-        
+        // Apply rotations in sequence and normalize
+        newQuaternion.multiply(pitchQuat).multiply(yawQuat).normalize();
         return newQuaternion;
       });
       
@@ -384,127 +402,53 @@ const Game = ({ onBackToMenu }) => {
     }
   };
 
-  // Handle keyboard controls for thrust and rotation
   const handleKeyDown = (e) => {
-    // Handle Escape key
     if (e.key === 'Escape') {
       onBackToMenu();
       return;
     }
 
     const thrustPower = 0.25;
-    const rotationSpeed = 0.1; // Adjust this for rotation speed
-    
-    // Extract Euler angles from quaternion for direction calculations
-    const euler = new THREE.Euler();
-    euler.setFromQuaternion(characterQuaternion, 'YXZ');
-    
-    const cosY = Math.cos(euler.y);
-    const sinY = Math.sin(euler.y);
-    const cosX = Math.cos(euler.x);
-    const sinX = Math.sin(euler.x);
-    const cosZ = Math.cos(euler.z);
-    const sinZ = Math.sin(euler.z);
-    
-    // Calculate forward/backward vectors using quaternion
-    const forwardVector = new THREE.Vector3(0, 0, -1);
-    forwardVector.applyQuaternion(characterQuaternion);
-    const forward = {
-      x: forwardVector.x,
-      y: forwardVector.y,
-      z: forwardVector.z
-    };
-    
-    const backward = {
-      x: -forwardVector.x,
-      y: -forwardVector.y,
-      z: -forwardVector.z
-    };
-    
-    // Calculate right vector using quaternion
-    const rightVector = new THREE.Vector3(1, 0, 0);
-    rightVector.applyQuaternion(characterQuaternion);
-    const right = {
-      x: rightVector.x,
-      y: rightVector.y,
-      z: rightVector.z
-    };
-
-    // Calculate up vector using quaternion
-    const upVector = new THREE.Vector3(0, 1, 0);
-    upVector.applyQuaternion(characterQuaternion);
-    const up = {
-      x: upVector.x,
-      y: upVector.y,
-      z: upVector.z
-    };
-
-    // Down is negative of up
-    const down = {
-      x: -upVector.x,
-      y: -upVector.y,
-      z: -upVector.z
-    };
-    
-    // Left is negative of right
-    const left = {
-      x: -right.x,
-      y: -right.y,
-      z: -right.z
-    };
-    
-    // Thrust multipliers for all directions
-    const thrusts = {
-      'w': forward,    // Forward
-      's': backward,   // Backward
-      'd': right,      // Right
-      'a': left,       // Left
-      'e': up,         // Up
-      'q': down        // Down
-    };
-    
     const key = e.key.toLowerCase();
-    if (thrusts[key]) {
+    const directions = calculateDirectionVectors(characterQuaternion);
+    
+    // Map keys to direction names
+    const keyMap = {
+      'w': 'forward',
+      's': 'backward',
+      'd': 'right',
+      'a': 'left',
+      'e': 'up',
+      'q': 'down'
+    };
+    
+    if (keyMap[key]) {
+      const thrustDirection = directions[keyMap[key]];
       setCharacterVelocity(prev => ({
-        x: prev.x + thrusts[key].x * thrustPower,
-        y: prev.y + thrusts[key].y * thrustPower,
-        z: prev.z + thrusts[key].z * thrustPower
+        x: prev.x + thrustDirection.x * thrustPower,
+        y: prev.y + thrustDirection.y * thrustPower,
+        z: prev.z + thrustDirection.z * thrustPower
       }));
     } else if (key === ' ') {
-      // Space key - stop all motion
       setCharacterVelocity({ x: 0, y: 0, z: 0 });
       setRotationalVelocity(new THREE.Vector3(0, 0, 0));
-    } else if (key === 'r') {
-      // R key - add right roll velocity (positive Z rotation)
-      const rollPower = 0.02; // Much slower roll speed
+    } else if (key === 'r' || key === 'f') {
+      const rollPower = 0.02;
+      const maxSpeed = 0.1;
+      const direction = key === 'r' ? 1 : -1;
+      
       setRotationalVelocity(prev => {
-        // Add positive roll power, but don't exceed max speed
-        const maxSpeed = 0.1;
-        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z + rollPower));
-        return new THREE.Vector3(0, 0, newZ);
-      });
-    } else if (key === 'f') {
-      // F key - add left roll velocity (negative Z rotation)
-      const rollPower = 0.02; // Much slower roll speed
-      setRotationalVelocity(prev => {
-        // Add negative roll power, but don't exceed max speed
-        const maxSpeed = 0.1;
-        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z - rollPower));
+        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z + rollPower * direction));
         return new THREE.Vector3(0, 0, newZ);
       });
     }
   };
 
-  // Add keyboard event listeners
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [characterQuaternion]);
 
-  // Add mouse event listeners
   useEffect(() => {
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mouseup', handleMouseUp);
@@ -517,10 +461,8 @@ const Game = ({ onBackToMenu }) => {
     };
   }, [isMouseDown, lastMouseX, lastMouseY]);
 
-  // Physics update loop
   useEffect(() => {
     const physicsInterval = setInterval(() => {
-      // Update position with simple collision check
       setCharacterPosition(prev => {
         const newPos = {
           x: prev.x + characterVelocity.x,
@@ -528,7 +470,6 @@ const Game = ({ onBackToMenu }) => {
           z: prev.z + characterVelocity.z
         };
         
-        // Boundary check - prevent character from going too far
         const maxDistance = 400;
         const boundedPos = {
           x: Math.max(-maxDistance, Math.min(maxDistance, newPos.x)),
@@ -536,7 +477,6 @@ const Game = ({ onBackToMenu }) => {
           z: Math.max(-maxDistance, Math.min(maxDistance, newPos.z))
         };
 
-        // Check if new position would collide with asteroid
         if (collisionPoint) {
           const newDistance = Math.sqrt(
             Math.pow(boundedPos.x - collisionPoint.x, 2) +
@@ -544,9 +484,7 @@ const Game = ({ onBackToMenu }) => {
             Math.pow(boundedPos.z - collisionPoint.z, 2)
           );
           
-          // If new position would be inside asteroid, prevent movement and stop velocity
           if (newDistance < collisionRadius) {
-            // Reset velocity just like spacebar
             setCharacterVelocity({ x: 0, y: 0, z: 0 });
             return prev;
           }
@@ -555,7 +493,6 @@ const Game = ({ onBackToMenu }) => {
         return boundedPos;
       });
 
-      // Update rotation
       if (rotationalVelocity.x !== 0 || rotationalVelocity.y !== 0 || rotationalVelocity.z !== 0) {
         setCharacterQuaternion(prev => {
           const newQuaternion = prev.clone();
@@ -575,6 +512,23 @@ const Game = ({ onBackToMenu }) => {
     return () => clearInterval(physicsInterval);
   }, [characterVelocity, rotationalVelocity]);
 
+  return {
+    characterQuaternion,
+    characterPosition,
+    setCollisionPoint,
+    setCollisionRadius
+  };
+};
+
+const Game = ({ onBackToMenu }) => {
+  const [monitorData, setMonitorData] = useState(null);
+  const {
+    characterQuaternion,
+    characterPosition,
+    setCollisionPoint,
+    setCollisionRadius
+  } = useMovementControls(onBackToMenu);
+
   return (
     <div className="w-full h-full bg-black">
       <Canvas
@@ -590,39 +544,23 @@ const Game = ({ onBackToMenu }) => {
         <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
         
         <Starfield />
-        
         <BaseStructure position={[-200, 0, 0]} color="#0a4a0a" />
         <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
         
-        {/* Add collidable asteroid */}
         <Asteroid 
           position={[0, 0, -50]} 
           characterPosition={characterPosition}
           onCollision={(point, radius) => {
-            setIsColliding(true);
             setCollisionPoint(point);
             setCollisionRadius(radius);
           }}
         />
         
-        {/* Navigation markers using the SphereMarker component - currently hidden
-        <SphereMarker position={[-30, 0, 0]} color="#ff4444" />
-        <SphereMarker position={[0, 0, -30]} color="#4444ff" />
-        <SphereMarker position={[0, 30, 0]} color="#44ff44" />
-        <SphereMarker position={[0, -30, 0]} color="#ffff44" />
-        <SphereMarker position={[30, 0, 0]} color="#ff44ff" />
-        <SphereMarker position={[0, 0, 30]} color="#ff8844" />
-        */}
-        
         <Character quaternion={characterQuaternion} position={characterPosition} />
-        
-        {/* Camera rotation sync using quaternions like the character */}
         <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
-        
         <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
       </Canvas>
       
-      {/* Combined Monitor */}
       <Monitor data={monitorData} />
     </div>
   );
