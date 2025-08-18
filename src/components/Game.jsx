@@ -125,23 +125,119 @@ const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
   return null;
 };
 
-// Base component for the two bases
-const Base = ({ position, color, size = [40, 20, 40] }) => {
+// Base structure component for the two bases
+const BaseStructure = ({ position, color }) => {
+  const mainBaseSize = [40, 20, 40];
+  const commandTowerSize = [10, 30, 10];
+  const modulesSize = [15, 10, 15];
+  const landingPadSize = [20, 2, 20];
+  const walkwaySize = [5, 3, 15];
+
   return (
-    <mesh position={position}>
-      <boxGeometry args={size} />
-      <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
-    </mesh>
+    <group position={position}>
+      {/* Main base building */}
+      <mesh position={[0, mainBaseSize[1]/2, 0]}>
+        <boxGeometry args={mainBaseSize} />
+        <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
+      </mesh>
+
+      {/* Command tower */}
+      <mesh position={[0, mainBaseSize[1] + commandTowerSize[1]/2, 0]}>
+        <boxGeometry args={commandTowerSize} />
+        <meshStandardMaterial color={color} roughness={0.6} metalness={0.4} />
+      </mesh>
+
+      {/* Surrounding modules */}
+      {[
+        [mainBaseSize[0]/2 + modulesSize[0]/2, modulesSize[1]/2, 0], // Right module
+        [-mainBaseSize[0]/2 - modulesSize[0]/2, modulesSize[1]/2, 0], // Left module
+        [0, modulesSize[1]/2, mainBaseSize[2]/2 + modulesSize[2]/2], // Front module
+        [0, modulesSize[1]/2, -mainBaseSize[2]/2 - modulesSize[2]/2], // Back module
+      ].map((modulePos, index) => (
+        <mesh key={index} position={modulePos}>
+          <boxGeometry args={modulesSize} />
+          <meshStandardMaterial color={color} roughness={0.7} metalness={0.3} />
+        </mesh>
+      ))}
+
+      {/* Landing pads */}
+      {[
+        [mainBaseSize[0]/2 + landingPadSize[0]/2 + 10, landingPadSize[1]/2, mainBaseSize[2]/2], // Right pad
+        [-mainBaseSize[0]/2 - landingPadSize[0]/2 - 10, landingPadSize[1]/2, -mainBaseSize[2]/2], // Left pad
+      ].map((padPos, index) => (
+        <mesh key={index} position={padPos}>
+          <boxGeometry args={landingPadSize} />
+          <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
+        </mesh>
+      ))}
+
+      {/* Connecting walkways */}
+      {[
+        [mainBaseSize[0]/2 + walkwaySize[0]/2, walkwaySize[1]/2, 0], // Right walkway
+        [-mainBaseSize[0]/2 - walkwaySize[0]/2, walkwaySize[1]/2, 0], // Left walkway
+        [0, walkwaySize[1]/2, mainBaseSize[2]/2 + walkwaySize[2]/2], // Front walkway
+        [0, walkwaySize[1]/2, -mainBaseSize[2]/2 - walkwaySize[2]/2], // Back walkway
+      ].map((walkwayPos, index) => (
+        <mesh key={index} position={walkwayPos}>
+          <boxGeometry args={walkwaySize} />
+          <meshStandardMaterial color={color} roughness={0.7} metalness={0.3} />
+        </mesh>
+      ))}
+    </group>
   );
 };
 
-// Asteroid component for navigation markers
-const Asteroid = ({ position, color, radius = 8, segments = 16 }) => {
+// Navigation sphere marker component
+const SphereMarker = ({ position, color, radius = 8, segments = 16 }) => {
   return (
     <mesh position={position}>
       <sphereGeometry args={[radius, segments, segments]} />
       <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
     </mesh>
+  );
+};
+
+// Collidable asteroid component
+const Asteroid = ({ position, radius = 15, segments = 16, onCollision, characterPosition }) => {
+  const asteroidRef = useRef();
+  const collisionRadius = radius * 1.2; // Slightly larger collision sphere
+  
+  // Collision check function
+  const checkCollision = (characterPosition) => {
+    if (asteroidRef.current) {
+      const asteroidPos = asteroidRef.current.position;
+      const distance = Math.sqrt(
+        Math.pow(characterPosition.x - asteroidPos.x, 2) +
+        Math.pow(characterPosition.y - asteroidPos.y, 2) +
+        Math.pow(characterPosition.z - asteroidPos.z, 2)
+      );
+      return distance < collisionRadius;
+    }
+    return false;
+  };
+
+  // Simple collision check
+  useFrame(() => {
+    if (asteroidRef.current && onCollision && characterPosition) {
+      // Always provide collision data for position checking
+      onCollision(asteroidRef.current.position, collisionRadius);
+    }
+  });
+
+  return (
+    <group position={position} ref={asteroidRef}>
+      {/* Visible asteroid */}
+      <mesh>
+        <sphereGeometry args={[radius, segments, segments]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.8} metalness={0.2} />
+      </mesh>
+      
+      {/* Collision sphere (semi-transparent for debugging) */}
+      <mesh>
+        <sphereGeometry args={[collisionRadius, segments, segments]} />
+        <meshStandardMaterial color="#ff0000" transparent opacity={0.1} wireframe />
+      </mesh>
+    </group>
   );
 };
 
@@ -247,6 +343,9 @@ const Game = ({ onBackToMenu }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [lastMouseX, setLastMouseX] = useState(0);
   const [lastMouseY, setLastMouseY] = useState(0);
+  const [isColliding, setIsColliding] = useState(false);
+  const [collisionPoint, setCollisionPoint] = useState(null);
+  const [collisionRadius, setCollisionRadius] = useState(0);
 
   // Handle mouse controls for character rotation
   const handleMouseDown = (e) => {
@@ -421,7 +520,7 @@ const Game = ({ onBackToMenu }) => {
   // Physics update loop
   useEffect(() => {
     const physicsInterval = setInterval(() => {
-      // Update position
+      // Update position with simple collision check
       setCharacterPosition(prev => {
         const newPos = {
           x: prev.x + characterVelocity.x,
@@ -431,12 +530,29 @@ const Game = ({ onBackToMenu }) => {
         
         // Boundary check - prevent character from going too far
         const maxDistance = 400;
-        
-        return {
+        const boundedPos = {
           x: Math.max(-maxDistance, Math.min(maxDistance, newPos.x)),
           y: Math.max(-maxDistance, Math.min(maxDistance, newPos.y)),
           z: Math.max(-maxDistance, Math.min(maxDistance, newPos.z))
         };
+
+        // Check if new position would collide with asteroid
+        if (collisionPoint) {
+          const newDistance = Math.sqrt(
+            Math.pow(boundedPos.x - collisionPoint.x, 2) +
+            Math.pow(boundedPos.y - collisionPoint.y, 2) +
+            Math.pow(boundedPos.z - collisionPoint.z, 2)
+          );
+          
+          // If new position would be inside asteroid, prevent movement and stop velocity
+          if (newDistance < collisionRadius) {
+            // Reset velocity just like spacebar
+            setCharacterVelocity({ x: 0, y: 0, z: 0 });
+            return prev;
+          }
+        }
+        
+        return boundedPos;
       });
 
       // Update rotation
@@ -470,21 +586,33 @@ const Game = ({ onBackToMenu }) => {
         }}
       >
         <ambientLight intensity={0.6} />
-        <directionalLight position={[-100, 50, 0]} intensity={2.0} target-position={[110, 0, 0]} />
-        <directionalLight position={[100, 50, 0]} intensity={2.0} target-position={[-110, 0, 0]} />
+        <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
+        <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
         
         <Starfield />
         
-        <Base position={[-100, 0, 0]} color="#0a4a0a" size={[40, 20, 40]} />
-        <Base position={[100, 0, 0]} color="#0a0a4a" size={[40, 20, 40]} />
+        <BaseStructure position={[-200, 0, 0]} color="#0a4a0a" />
+        <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
         
-        {/* Navigation asteroids using the Asteroid component */}
-        <Asteroid position={[-30, 0, 0]} color="#ff4444" />
-        <Asteroid position={[0, 0, -30]} color="#4444ff" />
-        <Asteroid position={[0, 30, 0]} color="#44ff44" />
-        <Asteroid position={[0, -30, 0]} color="#ffff44" />
-        <Asteroid position={[30, 0, 0]} color="#ff44ff" />
-        <Asteroid position={[0, 0, 30]} color="#ff8844" />
+        {/* Add collidable asteroid */}
+        <Asteroid 
+          position={[0, 0, -50]} 
+          characterPosition={characterPosition}
+          onCollision={(point, radius) => {
+            setIsColliding(true);
+            setCollisionPoint(point);
+            setCollisionRadius(radius);
+          }}
+        />
+        
+        {/* Navigation markers using the SphereMarker component - currently hidden
+        <SphereMarker position={[-30, 0, 0]} color="#ff4444" />
+        <SphereMarker position={[0, 0, -30]} color="#4444ff" />
+        <SphereMarker position={[0, 30, 0]} color="#44ff44" />
+        <SphereMarker position={[0, -30, 0]} color="#ffff44" />
+        <SphereMarker position={[30, 0, 0]} color="#ff44ff" />
+        <SphereMarker position={[0, 0, 30]} color="#ff8844" />
+        */}
         
         <Character quaternion={characterQuaternion} position={characterPosition} />
         
