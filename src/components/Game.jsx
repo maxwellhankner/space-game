@@ -7,7 +7,7 @@ import * as THREE from 'three';
 const Starfield = () => {
   // Create starfield geometry and material
   const { geometry, material } = useMemo(() => {
-    const STAR_COUNT = 5000; // Reduced from 10000
+    const STAR_COUNT = 3000; // Reduced from 10000
     const R_INNER = 500;
     const R_OUTER = 1000;
 
@@ -101,23 +101,29 @@ const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
     const euler = new THREE.Euler();
     euler.setFromQuaternion(characterQuaternion, 'YXZ');
     
-    const cosY = Math.cos(euler.y);
-    const sinY = Math.sin(euler.y);
-    const cosX = Math.cos(euler.x);
-    const sinX = Math.sin(euler.x);
+    // Camera distances
+    const cameraDistanceBehind = 10;
+    const cameraHeightOffset = 2;
+
+    // Create vectors for camera positioning
+    const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(characterQuaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(characterQuaternion);
     
-    // Camera distance behind character
-    const cameraDistance = 15;
+    // Calculate camera position by moving backward and up from character position
+    const cameraPosition = new THREE.Vector3(
+      characterPosition.x,
+      characterPosition.y,
+      characterPosition.z
+    );
     
-    // Calculate backward vector (opposite of forward)
-    const backwardX = sinY * cosX;
-    const backwardY = -sinX;
-    const backwardZ = cosY * cosX;
+    // Add offset in both directions
+    cameraPosition.add(backward.multiplyScalar(cameraDistanceBehind));
+    cameraPosition.add(up.multiplyScalar(cameraHeightOffset));
     
-    // Position camera behind character
-    const cameraX = characterPosition.x + backwardX * cameraDistance;
-    const cameraY = characterPosition.y + backwardY * cameraDistance;
-    const cameraZ = characterPosition.z + backwardZ * cameraDistance;
+    // Set final camera position
+    const cameraX = cameraPosition.x;
+    const cameraY = cameraPosition.y;
+    const cameraZ = cameraPosition.z;
     
     camera.position.set(cameraX, cameraY, cameraZ);
   });
@@ -184,16 +190,6 @@ const BaseStructure = ({ position, color }) => {
         </mesh>
       ))}
     </group>
-  );
-};
-
-// Navigation sphere marker component
-const SphereMarker = ({ position, color, radius = 8, segments = 16 }) => {
-  return (
-    <mesh position={position}>
-      <sphereGeometry args={[radius, segments, segments]} />
-      <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
-    </mesh>
   );
 };
 
@@ -362,9 +358,14 @@ const useMovementControls = (onBackToMenu) => {
   };
 
   const handleMouseDown = (e) => {
-    setIsMouseDown(true);
-    setLastMouseX(e.clientX);
-    setLastMouseY(e.clientY);
+    // Find the canvas element
+    const canvas = document.getElementById('game-canvas');
+    // Check if the click target is the canvas or a child of the canvas
+    if (canvas && (e.target === canvas || canvas.contains(e.target))) {
+      setIsMouseDown(true);
+      setLastMouseX(e.clientX);
+      setLastMouseY(e.clientY);
+    }
   };
 
   const handleMouseUp = () => {
@@ -470,12 +471,25 @@ const useMovementControls = (onBackToMenu) => {
           z: prev.z + characterVelocity.z
         };
         
-        const maxDistance = 400;
-        const boundedPos = {
-          x: Math.max(-maxDistance, Math.min(maxDistance, newPos.x)),
-          y: Math.max(-maxDistance, Math.min(maxDistance, newPos.y)),
-          z: Math.max(-maxDistance, Math.min(maxDistance, newPos.z))
-        };
+        const maxRadius = 400;
+        // Calculate distance from center
+        const distance = Math.sqrt(
+          newPos.x * newPos.x + 
+          newPos.y * newPos.y + 
+          newPos.z * newPos.z
+        );
+        
+        let boundedPos = { ...newPos };
+        
+        // If outside sphere, scale position back to sphere surface
+        if (distance > maxRadius) {
+          const scale = maxRadius / distance;
+          boundedPos = {
+            x: newPos.x * scale,
+            y: newPos.y * scale,
+            z: newPos.z * scale
+          };
+        }
 
         if (collisionPoint) {
           const newDistance = Math.sqrt(
@@ -532,7 +546,8 @@ const Game = ({ onBackToMenu }) => {
   return (
     <div className="w-full h-full bg-black">
       <Canvas
-        camera={{ position: [0, 0, 15], fov: 75, near: 0.1, far: 1000 }}
+        id="game-canvas"
+        camera={{ position: [0, 0, 15], fov: 75, near: 0.1, far: 4000 }}
         className="w-full h-full"
         gl={{ antialias: true, outputColorSpace: THREE.SRGBColorSpace }}
         onCreated={({ gl }) => {
