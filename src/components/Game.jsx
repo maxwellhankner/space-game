@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
+import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier';
 import * as THREE from 'three';
 
 // Game Configuration
@@ -17,16 +18,9 @@ const CONFIG = {
     near: 0.1,
     far: 4000,
     offset: {
-      back: 10,
-      up: 2
+      back: 15,
+      up: 5
     }
-  },
-  movement: {
-    thrustPower: 0.25,
-    rollPower: 0.02,
-    maxRollSpeed: 0.1,
-    mouseSensitivity: 0.003,
-    maxRadius: 400
   }
 };
 
@@ -69,56 +63,17 @@ const Starfield = () => {
   return <points geometry={geometry} material={material} />;
 };
 
-const BaseStructure = ({ position, color }) => {
-  return (
-    <group position={position}>
-      {/* Main building - base color */}
-      <mesh position={[0, 10, 0]}>
-        <boxGeometry args={[40, 20, 40]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-
-      {/* Central tower - lighter */}
-      <mesh position={[0, 35, 0]}>
-        <boxGeometry args={[10, 30, 10]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6c0c" : "#ffae35"} />
-      </mesh>
-
-      {/* Side modules - each different */}
-      <mesh position={[27.5, 5, 0]}>
-        <boxGeometry args={[15, 10, 15]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#084408" : "#ff7700"} />
-      </mesh>
-      <mesh position={[-27.5, 5, 0]}>
-        <boxGeometry args={[15, 10, 15]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6e0c" : "#ffa01f"} />
-      </mesh>
-      <mesh position={[0, 5, 27.5]}>
-        <boxGeometry args={[15, 10, 15]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#073f07" : "#ff6b00"} />
-      </mesh>
-      <mesh position={[0, 5, -27.5]}>
-        <boxGeometry args={[15, 10, 15]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#0b5f0b" : "#ff9815"} />
-      </mesh>
-
-      {/* Landing pads - darker */}
-      <mesh position={[35, 1, 20]}>
-        <boxGeometry args={[20, 2, 20]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
-      </mesh>
-      <mesh position={[-35, 1, -20]}>
-        <boxGeometry args={[20, 2, 20]} />
-        <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
-      </mesh>
-    </group>
-  );
-};
-
-// Character component that will be the center focal point
-const Character = ({ quaternion, position }) => {
+const Character = ({ rigidBodyRef }) => {
   const { scene } = useGLTF('/models/astronaut-1.glb');
   const modelRef = useRef();
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [lastMouseX, setLastMouseX] = useState(0);
+  const [lastMouseY, setLastMouseY] = useState(0);
+  // Control settings
+  const sensitivity = 0.003; // Mouse look sensitivity
+  const velocityIncrement = 2.0; // Speed change per key press
+  const [isBraking, setIsBraking] = useState(false);
+  const brakeForce = 0.95; // How quickly velocity decreases (0-1)
   
   useMemo(() => {
     if (scene) {
@@ -128,171 +83,112 @@ const Character = ({ quaternion, position }) => {
     }
   }, [scene]);
 
+  // Handle keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!rigidBodyRef.current) return;
+
+      const key = e.key.toLowerCase();
+      if (key === ' ') {
+        setIsBraking(true);
+        return;
+      }
+      if (!['w', 's', 'a', 'd', 'e', 'q'].includes(key)) return;
+
+      // Get current velocity and rotation
+      const currentVel = rigidBodyRef.current.linvel();
+      const rotation = rigidBodyRef.current.rotation();
+      const quat = new THREE.Quaternion(
+        rotation.x,
+        rotation.y,
+        rotation.z,
+        rotation.w
+      );
+
+      // Calculate direction vectors based on current rotation
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+      
+      // Get current velocity as Vector3
+      const velocity = new THREE.Vector3(currentVel.x, currentVel.y, currentVel.z);
+      
+      // Add velocity in the appropriate direction
+      switch(key) {
+        case 'w':
+          velocity.add(forward.multiplyScalar(velocityIncrement));
+          break;
+        case 's':
+          velocity.add(forward.multiplyScalar(-velocityIncrement));
+          break;
+        case 'd':
+          velocity.add(right.multiplyScalar(velocityIncrement));
+          break;
+        case 'a':
+          velocity.add(right.multiplyScalar(-velocityIncrement));
+          break;
+        case 'e':
+          velocity.add(up.multiplyScalar(velocityIncrement));
+          break;
+        case 'q':
+          velocity.add(up.multiplyScalar(-velocityIncrement));
+          break;
+      }
+
+      // Apply the new velocity
+      rigidBodyRef.current.setLinvel(velocity, true);
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.key === ' ') {
+        setIsBraking(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [velocityIncrement]);
+
+  // Handle braking
   useFrame(() => {
-    if (modelRef.current && scene) {
-      // Create a quaternion that combines the character's rotation with the initial model orientation
-      const finalQuaternion = quaternion.clone();
-      
-      // Apply the initial model orientation (facing forward)
-      const initialQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-      finalQuaternion.multiply(initialQuat);
-      
-      // Apply the quaternion to the scene
-      scene.quaternion.copy(finalQuaternion);
-      
-      // Set position
-      scene.position.set(position.x, position.y, position.z);
+    if (isBraking && rigidBodyRef.current) {
+      // Get current velocities
+      const currentVel = rigidBodyRef.current.linvel();
+      const currentAngVel = rigidBodyRef.current.angvel();
+
+      // Apply braking to linear velocity
+      const newVel = new THREE.Vector3(
+        currentVel.x * brakeForce,
+        currentVel.y * brakeForce,
+        currentVel.z * brakeForce
+      );
+
+      // Apply braking to angular velocity
+      const newAngVel = new THREE.Vector3(
+        currentAngVel.x * brakeForce,
+        currentAngVel.y * brakeForce,
+        currentAngVel.z * brakeForce
+      );
+
+      // Apply the reduced velocities
+      rigidBodyRef.current.setLinvel(newVel, true);
+      rigidBodyRef.current.setAngvel(newAngVel, true);
+
+      // If velocities are very small, stop completely
+      if (newVel.lengthSq() < 0.001 && newAngVel.lengthSq() < 0.001) {
+        rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
     }
   });
 
-  return (
-    <group>
-      <primitive ref={modelRef} object={scene} />
-    </group>
-  );
-};
-
-const FollowCamera = ({ characterQuaternion, characterPosition }) => {
-  // Create a memoized offset vector to prevent unnecessary recreations
-  const cameraOffset = useMemo(() => 
-    new THREE.Vector3(0, CONFIG.camera.offset.up, CONFIG.camera.offset.back),
-    []
-  );
-
-  useFrame((state) => {
-    const camera = state.camera;
-    
-    // Update camera rotation to match character
-    camera.quaternion.copy(characterQuaternion);
-    
-    // Calculate and apply camera position offset
-    const rotatedOffset = cameraOffset.clone().applyQuaternion(characterQuaternion);
-    camera.position.copy(characterPosition).add(rotatedOffset);
-  });
-  
-  return null;
-};
-
-// Data provider component that runs inside Canvas
-const DataProvider = ({ onDataUpdate, characterQuaternion, characterPosition }) => {
-  useFrame((state) => {
-    const camera = state.camera;
-    
-    // Convert quaternion to Euler angles for display using the same rotation order as CameraRotationSync
-    const euler = new THREE.Euler();
-    euler.setFromQuaternion(camera.quaternion, 'YXZ'); // Y (yaw) → X (pitch) → Z (roll)
-    
-    const cameraData = {
-      position: [
-        Math.round(camera.position.x),
-        Math.round(camera.position.y),
-        Math.round(camera.position.z)
-      ],
-      rotation: [
-        Math.round(euler.x * 180 / Math.PI),
-        Math.round(euler.y * 180 / Math.PI),
-        Math.round(euler.z * 180 / Math.PI)
-      ],
-      quaternion: [
-        camera.quaternion.x.toFixed(3),
-        camera.quaternion.y.toFixed(3),
-        camera.quaternion.z.toFixed(3),
-        camera.quaternion.w.toFixed(3)
-      ],
-      fov: Math.round(camera.fov)
-    };
-    
-    // Character position is now dynamic based on movement
-    // Extract Euler angles from quaternion for display
-    const characterEuler = new THREE.Euler();
-    characterEuler.setFromQuaternion(characterQuaternion, 'YXZ');
-    
-    const characterData = {
-      position: [
-        Math.round(characterPosition.x),
-        Math.round(characterPosition.y),
-        Math.round(characterPosition.z)
-      ],
-      rotation: [
-        Math.round(characterEuler.x * 180 / Math.PI),
-        Math.round(characterEuler.y * 180 / Math.PI),
-        Math.round(characterEuler.z * 180 / Math.PI)
-      ],
-      quaternion: [
-        characterQuaternion.x.toFixed(3),
-        characterQuaternion.y.toFixed(3),
-        characterQuaternion.z.toFixed(3),
-        characterQuaternion.w.toFixed(3)
-      ],
-      status: 'ACTIVE'
-    };
-    
-    onDataUpdate({ camera: cameraData, character: characterData });
-  });
-  
-  return null; // This component doesn't render anything
-};
-
-// Displays real-time data about the character and camera positions
-const Monitor = ({ data }) => {
-  if (!data) return null;
-
-  const renderPanel = (title, data, position, titleColor) => (
-    <div className={`absolute bottom-4 ${position} z-10 bg-black/70 text-white p-3 rounded-lg font-mono text-xs backdrop-blur-sm border border-white/20`}>
-      <div className="space-y-1">
-        <div className={`${titleColor} font-semibold`}>{title}</div>
-        <div>POS: [{data.position.join(', ')}]</div>
-        <div>ROT: [{data.rotation.map(r => `${r}°`).join(', ')}]</div>
-        {data.status && <div>STATUS: {data.status}</div>}
-        {data.fov && <div>FOV: {data.fov}°</div>}
-        <div className="text-yellow-400 text-xs">
-          Euler: X:{data.rotation[0].toFixed(2)}° Y:{data.rotation[1].toFixed(2)}° Z:{data.rotation[2].toFixed(2)}°
-        </div>
-        <div className="text-purple-400 text-xs">
-          Quat: [{data.quaternion.join(', ')}]
-        </div>
-      </div>
-    </div>
-  );
-  
-  return (
-    <>
-      {renderPanel("ASTRONAUT MONITOR", data.character, "left-4", "text-blue-400")}
-      {renderPanel("CAMERA MONITOR", data.camera, "right-4", "text-green-400")}
-    </>
-  );
-};
-
-// Custom hook for movement controls
-const useMovementControls = (onBackToMenu) => {
-  const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
-  const [characterVelocity, setCharacterVelocity] = useState({ x: 0, y: 0, z: 0 });
-  const [characterPosition, setCharacterPosition] = useState({ x: 0, y: 0, z: 0 });
-  const [rotationalVelocity, setRotationalVelocity] = useState(new THREE.Vector3(0, 0, 0));
-  const [isMouseDown, setIsMouseDown] = useState(false);
-  const [lastMouseX, setLastMouseX] = useState(0);
-  const [lastMouseY, setLastMouseY] = useState(0);
-
-
-  const calculateDirectionVectors = (quaternion) => {
-    const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-    const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
-    const upVector = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-
-    return {
-      forward: { x: forwardVector.x, y: forwardVector.y, z: forwardVector.z },
-      backward: { x: -forwardVector.x, y: -forwardVector.y, z: -forwardVector.z },
-      right: { x: rightVector.x, y: rightVector.y, z: rightVector.z },
-      left: { x: -rightVector.x, y: -rightVector.y, z: -rightVector.z },
-      up: { x: upVector.x, y: upVector.y, z: upVector.z },
-      down: { x: -upVector.x, y: -upVector.y, z: -upVector.z }
-    };
-  };
-
   const handleMouseDown = (e) => {
-    // Find the canvas element
     const canvas = document.getElementById('game-canvas');
-    // Check if the click target is the canvas or a child of the canvas
     if (canvas && (e.target === canvas || canvas.contains(e.target))) {
       setIsMouseDown(true);
       setLastMouseX(e.clientX);
@@ -305,82 +201,46 @@ const useMovementControls = (onBackToMenu) => {
   };
 
   const handleMouseMove = (e) => {
-    if (isMouseDown) {
+    if (isMouseDown && rigidBodyRef.current) {
       const deltaX = e.clientX - lastMouseX;
       const deltaY = e.clientY - lastMouseY;
       
-      // Reduced sensitivity for smoother movement
       const sensitivity = 0.003;
       
-      setCharacterQuaternion(prev => {
-        const newQuaternion = prev.clone();
-        
-        // Create and normalize rotation quaternions
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0), 
-          -deltaY * sensitivity
-        );
-        const yawQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 1, 0), 
-          -deltaX * sensitivity
-        );
-        
-        // Apply rotations in sequence and normalize
-        newQuaternion.multiply(pitchQuat).multiply(yawQuat).normalize();
-        return newQuaternion;
+      // Get current rotation
+      const currentRotation = rigidBodyRef.current.rotation();
+      const currentQuat = new THREE.Quaternion(
+        currentRotation.x,
+        currentRotation.y,
+        currentRotation.z,
+        currentRotation.w
+      );
+
+      // Create rotation quaternions
+      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        -deltaY * sensitivity
+      );
+      const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        -deltaX * sensitivity
+      );
+      
+      // Apply rotations in sequence
+      const newQuat = currentQuat.multiply(yawQuat).multiply(pitchQuat);
+      
+      // Update rigid body rotation
+      rigidBodyRef.current.setRotation({
+        x: newQuat.x,
+        y: newQuat.y,
+        z: newQuat.z,
+        w: newQuat.w
       });
       
       setLastMouseX(e.clientX);
       setLastMouseY(e.clientY);
     }
   };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      onBackToMenu();
-      return;
-    }
-
-    const thrustPower = 0.25;
-    const key = e.key.toLowerCase();
-    const directions = calculateDirectionVectors(characterQuaternion);
-    
-    // Map keys to direction names
-    const keyMap = {
-      'w': 'forward',
-      's': 'backward',
-      'd': 'right',
-      'a': 'left',
-      'e': 'up',
-      'q': 'down'
-    };
-    
-    if (keyMap[key]) {
-      const thrustDirection = directions[keyMap[key]];
-      setCharacterVelocity(prev => ({
-        x: prev.x + thrustDirection.x * thrustPower,
-        y: prev.y + thrustDirection.y * thrustPower,
-        z: prev.z + thrustDirection.z * thrustPower
-      }));
-    } else if (key === ' ') {
-      setCharacterVelocity({ x: 0, y: 0, z: 0 });
-      setRotationalVelocity(new THREE.Vector3(0, 0, 0));
-    } else if (key === 'r' || key === 'f') {
-      const rollPower = 0.02;
-      const maxSpeed = 0.1;
-      const direction = key === 'r' ? 1 : -1;
-      
-      setRotationalVelocity(prev => {
-        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z + rollPower * direction));
-        return new THREE.Vector3(0, 0, newZ);
-      });
-    }
-  };
-
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [characterQuaternion]);
 
   useEffect(() => {
     document.addEventListener('mousedown', handleMouseDown);
@@ -394,50 +254,140 @@ const useMovementControls = (onBackToMenu) => {
     };
   }, [isMouseDown, lastMouseX, lastMouseY]);
 
-  useEffect(() => {
-    const physicsInterval = setInterval(() => {
-      setCharacterPosition(prev => {
-        const newPos = {
-          x: prev.x + characterVelocity.x,
-          y: prev.y + characterVelocity.y,
-          z: prev.z + characterVelocity.z
-        };
-        
-        // No movement limitations
-        return newPos;
-      });
+  return (
+    <RigidBody 
+      ref={rigidBodyRef} 
+      position={[0, 0, 0]} 
+      type="dynamic"
+    >
+      <primitive ref={modelRef} object={scene} />
+      <CuboidCollider args={[0.5, 1, 0.5]} />
+    </RigidBody>
+  );
+};
 
-      if (rotationalVelocity.x !== 0 || rotationalVelocity.y !== 0 || rotationalVelocity.z !== 0) {
-        setCharacterQuaternion(prev => {
-          const newQuaternion = prev.clone();
-          const rotationQuat = new THREE.Quaternion();
-          rotationQuat.setFromEuler(new THREE.Euler(
-            rotationalVelocity.x,
-            rotationalVelocity.y,
-            rotationalVelocity.z,
-            'XYZ'
-          ));
-          newQuaternion.multiply(rotationQuat);
-          return newQuaternion;
-        });
-      }
-    }, 16);
+const BaseStructure = ({ position, color }) => {
+  return (
+    <RigidBody type="fixed" position={position}>
+      <group>
+        {/* Main building - base color */}
+        <mesh position={[0, 10, 0]}>
+          <boxGeometry args={[40, 20, 40]} />
+          <meshStandardMaterial color={color} />
+        </mesh>
 
-    return () => clearInterval(physicsInterval);
-  }, [characterVelocity, rotationalVelocity]);
+        {/* Central tower - lighter */}
+        <mesh position={[0, 35, 0]}>
+          <boxGeometry args={[10, 30, 10]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6c0c" : "#ffae35"} />
+        </mesh>
 
-  return {
-    characterQuaternion,
-    characterPosition
-  };
+        {/* Side modules - each different */}
+        <mesh position={[27.5, 5, 0]}>
+          <boxGeometry args={[15, 10, 15]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#084408" : "#ff7700"} />
+        </mesh>
+        <mesh position={[-27.5, 5, 0]}>
+          <boxGeometry args={[15, 10, 15]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6e0c" : "#ffa01f"} />
+        </mesh>
+        <mesh position={[0, 5, 27.5]}>
+          <boxGeometry args={[15, 10, 15]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#073f07" : "#ff6b00"} />
+        </mesh>
+        <mesh position={[0, 5, -27.5]}>
+          <boxGeometry args={[15, 10, 15]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#0b5f0b" : "#ff9815"} />
+        </mesh>
+
+        {/* Landing pads - darker */}
+        <mesh position={[35, 1, 20]}>
+          <boxGeometry args={[20, 2, 20]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
+        </mesh>
+        <mesh position={[-35, 1, -20]}>
+          <boxGeometry args={[20, 2, 20]} />
+          <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
+        </mesh>
+      </group>
+    </RigidBody>
+  );
+};
+
+const Asteroid = ({ position }) => {
+  return (
+    <RigidBody type="fixed" position={position}>
+      <mesh>
+        <sphereGeometry args={[10, 32, 32]} />
+        <meshStandardMaterial color="#666666" />
+      </mesh>
+    </RigidBody>
+  );
+};
+
+const FollowCamera = ({ characterRef }) => {
+  const cameraOffset = useMemo(() => new THREE.Vector3(0, CONFIG.camera.offset.up, CONFIG.camera.offset.back), []);
+  const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []); // World up vector for reference
+  
+  useFrame((state) => {
+    if (!characterRef.current) return;
+
+    const camera = state.camera;
+    const rigidBody = characterRef.current;
+    
+    // Get character position and rotation
+    const physicsPosition = rigidBody.translation();
+    const physicsRotation = rigidBody.rotation();
+    
+    // Create quaternion from physics rotation
+    const characterQuat = new THREE.Quaternion(
+      physicsRotation.x,
+      physicsRotation.y,
+      physicsRotation.z,
+      physicsRotation.w
+    );
+    
+    // Calculate camera position based on character orientation
+    const rotatedOffset = cameraOffset.clone().applyQuaternion(characterQuat);
+    const targetPosition = new THREE.Vector3(
+      physicsPosition.x + rotatedOffset.x,
+      physicsPosition.y + rotatedOffset.y,
+      physicsPosition.z + rotatedOffset.z
+    );
+    
+    // Directly set camera position
+    camera.position.copy(targetPosition);
+    
+    // Calculate character's up vector
+    const characterUp = worldUp.clone().applyQuaternion(characterQuat);
+    
+    // Create target look position (character position)
+    const targetLook = new THREE.Vector3(
+      physicsPosition.x,
+      physicsPosition.y,
+      physicsPosition.z
+    );
+    
+    // Calculate rotation matrix
+    const targetMatrix = new THREE.Matrix4();
+    
+    // Forward vector (from camera to character)
+    const forward = targetLook.clone().sub(camera.position).normalize();
+    // Right vector (cross product of world up and forward)
+    const right = forward.clone().cross(characterUp).normalize();
+    // Recalculate up vector to ensure orthogonal basis
+    const up = right.clone().cross(forward).normalize();
+    
+    // Build rotation matrix from orthogonal vectors and directly apply it
+    targetMatrix.makeBasis(right, up, forward.negate());
+    camera.quaternion.setFromRotationMatrix(targetMatrix);
+  });
+  
+  return null;
 };
 
 const Game = ({ onBackToMenu }) => {
-  const [monitorData, setMonitorData] = useState(null);
-  const {
-    characterQuaternion,
-    characterPosition
-  } = useMovementControls(onBackToMenu);
+  const characterRigidBodyRef = useRef();
 
   return (
     <div className="w-full h-full bg-black">
@@ -451,24 +401,19 @@ const Game = ({ onBackToMenu }) => {
         }}
         className="w-full h-full"
         gl={{ antialias: true, outputColorSpace: THREE.SRGBColorSpace }}
-        onCreated={({ gl }) => {
-          gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        }}
       >
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
-        <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
-        
-        <Starfield />
-        <BaseStructure position={[-200, 0, 0]} color="#0a4a0a" />
-        <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
-        
-        <Character quaternion={characterQuaternion} position={characterPosition} />
-        <FollowCamera characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
-        <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        <Physics gravity={[0, 0, 0]}>
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
+          <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
+          
+          <Starfield />
+          <BaseStructure position={[0, 0, 100]} color="#0a4a0a" /> {/* Green base */}
+          <BaseStructure position={[0, 0, -100]} color="#ff8800" /> {/* Orange base */}
+          <Character rigidBodyRef={characterRigidBodyRef} />
+          <FollowCamera characterRef={characterRigidBodyRef} />
+        </Physics>
       </Canvas>
-      
-      <Monitor data={monitorData} />
     </div>
   );
 };
