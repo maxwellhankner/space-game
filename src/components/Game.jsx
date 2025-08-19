@@ -16,8 +16,10 @@ const CONFIG = {
     fov: 75,
     near: 0.1,
     far: 4000,
-    cameraBack: 10,
-    cameraUp: 2
+    offset: {
+      back: 10,
+      up: 2
+    }
   },
   movement: {
     thrustPower: 0.25,
@@ -67,6 +69,52 @@ const Starfield = () => {
   return <points geometry={geometry} material={material} />;
 };
 
+const BaseStructure = ({ position, color }) => {
+  return (
+    <group position={position}>
+      {/* Main building - base color */}
+      <mesh position={[0, 10, 0]}>
+        <boxGeometry args={[40, 20, 40]} />
+        <meshStandardMaterial color={color} />
+      </mesh>
+
+      {/* Central tower - lighter */}
+      <mesh position={[0, 35, 0]}>
+        <boxGeometry args={[10, 30, 10]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6c0c" : "#ffae35"} />
+      </mesh>
+
+      {/* Side modules - each different */}
+      <mesh position={[27.5, 5, 0]}>
+        <boxGeometry args={[15, 10, 15]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#084408" : "#ff7700"} />
+      </mesh>
+      <mesh position={[-27.5, 5, 0]}>
+        <boxGeometry args={[15, 10, 15]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#0c6e0c" : "#ffa01f"} />
+      </mesh>
+      <mesh position={[0, 5, 27.5]}>
+        <boxGeometry args={[15, 10, 15]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#073f07" : "#ff6b00"} />
+      </mesh>
+      <mesh position={[0, 5, -27.5]}>
+        <boxGeometry args={[15, 10, 15]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#0b5f0b" : "#ff9815"} />
+      </mesh>
+
+      {/* Landing pads - darker */}
+      <mesh position={[35, 1, 20]}>
+        <boxGeometry args={[20, 2, 20]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
+      </mesh>
+      <mesh position={[-35, 1, -20]}>
+        <boxGeometry args={[20, 2, 20]} />
+        <meshStandardMaterial color={color === "#0a4a0a" ? "#063606" : "#ff5500"} />
+      </mesh>
+    </group>
+  );
+};
+
 // Character component that will be the center focal point
 const Character = ({ quaternion, position }) => {
   const { scene } = useGLTF('/models/astronaut-1.glb');
@@ -104,123 +152,25 @@ const Character = ({ quaternion, position }) => {
   );
 };
 
-// Simple component that copies character rotation to camera
-const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
+const FollowCamera = ({ characterQuaternion, characterPosition }) => {
+  // Create a memoized offset vector to prevent unnecessary recreations
+  const cameraOffset = useMemo(() => 
+    new THREE.Vector3(0, CONFIG.camera.offset.up, CONFIG.camera.offset.back),
+    []
+  );
+
   useFrame((state) => {
     const camera = state.camera;
     
-    // Apply the character's quaternion directly to the camera
+    // Update camera rotation to match character
     camera.quaternion.copy(characterQuaternion);
     
-    // Calculate position to always be behind the character
-    // Extract Euler angles from quaternion for position calculations
-    const euler = new THREE.Euler();
-    euler.setFromQuaternion(characterQuaternion, 'YXZ');
-    
-    // Create vectors for camera positioning
-    const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(characterQuaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(characterQuaternion);
-    
-    // Calculate camera position by moving backward and up from character position
-    const cameraPosition = new THREE.Vector3(
-      characterPosition.x,
-      characterPosition.y,
-      characterPosition.z
-    );
-    
-    // Add offset in both directions using CONFIG values
-    cameraPosition.add(backward.multiplyScalar(CONFIG.camera.cameraBack));
-    cameraPosition.add(up.multiplyScalar(CONFIG.camera.cameraUp));
-    
-    // Set final camera position
-    const cameraX = cameraPosition.x;
-    const cameraY = cameraPosition.y;
-    const cameraZ = cameraPosition.z;
-    
-    camera.position.set(cameraX, cameraY, cameraZ);
+    // Calculate and apply camera position offset
+    const rotatedOffset = cameraOffset.clone().applyQuaternion(characterQuaternion);
+    camera.position.copy(characterPosition).add(rotatedOffset);
   });
   
   return null;
-};
-
-const BaseStructure = ({ position, color }) => {
-  // Base structure dimensions
-  const BASE_CONFIG = {
-    main: [40, 20, 40],
-    tower: [10, 30, 10],
-    module: [15, 10, 15],
-    landingPad: [20, 2, 20],
-    walkway: [5, 3, 15]
-  };
-  
-  const { main, tower, module, landingPad, walkway } = BASE_CONFIG;
-  
-  const structures = [
-    {
-      type: 'main',
-      size: main,
-      position: [0, main[1]/2, 0],
-      material: { roughness: 0.8, metalness: 0.2 }
-    },
-    {
-      type: 'tower',
-      size: tower,
-      position: [0, main[1] + tower[1]/2, 0],
-      material: { roughness: 0.6, metalness: 0.4 }
-    },
-    // Modules
-    ...['right', 'left', 'front', 'back'].map((side, i) => {
-      const isHorizontal = i < 2;
-      const sign = i % 2 === 0 ? 1 : -1;
-      return {
-        type: `module-${side}`,
-        size: module,
-        position: [
-          isHorizontal ? sign * (main[0]/2 + module[0]/2) : 0,
-          module[1]/2,
-          !isHorizontal ? sign * (main[2]/2 + module[2]/2) : 0
-        ],
-        material: { roughness: 0.7, metalness: 0.3 }
-      };
-    }),
-    // Landing pads
-    ...['right', 'left'].map((side, i) => ({
-      type: `pad-${side}`,
-      size: landingPad,
-      position: [
-        (i === 0 ? 1 : -1) * (main[0]/2 + landingPad[0]/2 + 10),
-        landingPad[1]/2,
-        (i === 0 ? 1 : -1) * main[2]/2
-      ],
-      material: { roughness: 0.9, metalness: 0.1 }
-    })),
-    // Walkways
-    ...['right', 'left', 'front', 'back'].map((side, i) => {
-      const isHorizontal = i < 2;
-      const sign = i % 2 === 0 ? 1 : -1;
-      return {
-        type: `walkway-${side}`,
-        size: walkway,
-        position: [
-          isHorizontal ? sign * (main[0]/2 + walkway[0]/2) : 0,
-          walkway[1]/2,
-          !isHorizontal ? sign * (main[2]/2 + walkway[2]/2) : 0
-        ],
-        material: { roughness: 0.7, metalness: 0.3 }
-      };
-    })
-  ];
-
-  return (
-    <group position={position}>
-      {structures.map(({ type, size, position, material }) => (
-        <mesh key={type} position={position}>
-          <boxGeometry args={size} />
-          <meshStandardMaterial color={color} {...material} />
-        </mesh>
-      ))}
-    </group>
-  );
 };
 
 // Data provider component that runs inside Canvas
@@ -453,28 +403,8 @@ const useMovementControls = (onBackToMenu) => {
           z: prev.z + characterVelocity.z
         };
         
-        const maxRadius = 400;
-        // Calculate distance from center
-        const distance = Math.sqrt(
-          newPos.x * newPos.x + 
-          newPos.y * newPos.y + 
-          newPos.z * newPos.z
-        );
-        
-        let boundedPos = { ...newPos };
-        
-        // If outside sphere, scale position back to sphere surface
-        if (distance > maxRadius) {
-          const scale = maxRadius / distance;
-          boundedPos = {
-            x: newPos.x * scale,
-            y: newPos.y * scale,
-            z: newPos.z * scale
-          };
-        }
-
-
-        return boundedPos;
+        // No movement limitations
+        return newPos;
       });
 
       if (rotationalVelocity.x !== 0 || rotationalVelocity.y !== 0 || rotationalVelocity.z !== 0) {
@@ -513,7 +443,12 @@ const Game = ({ onBackToMenu }) => {
     <div className="w-full h-full bg-black">
       <Canvas
         id="game-canvas"
-        camera={{ position: [0, 0, 15], fov: 75, near: 0.1, far: 4000 }}
+        camera={{
+          position: [0, 0, 15],
+          fov: CONFIG.camera.fov,
+          near: CONFIG.camera.near,
+          far: CONFIG.camera.far
+        }}
         className="w-full h-full"
         gl={{ antialias: true, outputColorSpace: THREE.SRGBColorSpace }}
         onCreated={({ gl }) => {
@@ -529,7 +464,7 @@ const Game = ({ onBackToMenu }) => {
         <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
         
         <Character quaternion={characterQuaternion} position={characterPosition} />
-        <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        <FollowCamera characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
         <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
       </Canvas>
       
