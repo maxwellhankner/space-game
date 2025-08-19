@@ -3,6 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
+
 // Game Configuration
 const CONFIG = {
   starfield: {
@@ -520,6 +521,7 @@ const Game = ({ onBackToMenu }) => {
           gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         }}
       >
+<<<<<<< HEAD
         <ambientLight intensity={0.6} />
         <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
         <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
@@ -532,6 +534,30 @@ const Game = ({ onBackToMenu }) => {
         <Character quaternion={characterQuaternion} position={characterPosition} />
         <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
         <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+=======
+        <Physics configuration={{ debug: true, gravity: [0, 0, 0] }}>
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
+          <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
+          
+          <Starfield />
+          <BaseStructure position={[-200, 0, 0]} color="#0a4a0a" />
+          <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
+          
+          <Asteroid 
+            position={[0, 0, -50]} 
+            characterPosition={characterPosition}
+            onCollision={(point, radius) => {
+              setCollisionPoint(point);
+              setCollisionRadius(radius);
+            }}
+          />
+          
+          <Character quaternion={characterQuaternion} position={characterPosition} />
+          <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+          <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        </Physics>
+>>>>>>> b7548e883dadcc7de8d5dd2936098ae11a060b8f
       </Canvas>
       
       <Monitor data={monitorData} />
