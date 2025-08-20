@@ -72,6 +72,9 @@ const Character = ({ rigidBodyRef, gravityType, currentAsteroid }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [lastMouseX, setLastMouseX] = useState(0);
   const [lastMouseY, setLastMouseY] = useState(0);
+  
+  // Store yaw rotation for sphere gravity
+  const yawRotationRef = useRef(0);
 
   // Constants
   const CONTROLS = {
@@ -87,15 +90,20 @@ const Character = ({ rigidBodyRef, gravityType, currentAsteroid }) => {
   // Gravity zone handlers
   const gravityHandlers = {
     box: {
-      enter: () => setGravityType('box'),
+      enter: () => {
+        yawRotationRef.current = 0; // Reset yaw when entering box gravity
+        setGravityType('box');
+      },
       exit: () => setGravityType('zero')
     },
     sphere: {
       enter: (asteroidData) => {
+        yawRotationRef.current = 0; // Reset yaw when entering sphere gravity
         setCurrentAsteroid(asteroidData);
         setGravityType('sphere');
       },
       exit: () => {
+        yawRotationRef.current = 0; // Reset yaw when exiting sphere gravity
         setCurrentAsteroid(null);
         setGravityType('zero');
       }
@@ -352,17 +360,39 @@ const Character = ({ rigidBodyRef, gravityType, currentAsteroid }) => {
       newVel.add(gravityForce);
       
       // Create quaternion that points character's down direction (negative Y) toward asteroid
-      const targetQuat = new THREE.Quaternion().setFromUnitVectors(
+      const uprightQuat = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, -1, 0), // character's default down direction (feet)
         toAsteroid // new down direction (toward asteroid)
       );
       
+      // For proper left/right rotation on the surface, we need to:
+      // 1. Get the character's current forward direction after upright orientation
+      // 2. Calculate the right vector (perpendicular to both up and forward)
+      // 3. Rotate around the up vector using the right vector as reference
+      
+      // Get character's forward direction after upright orientation is applied
+      const defaultForward = new THREE.Vector3(0, 0, -1); // Character's default forward
+      const uprightForward = defaultForward.clone().applyQuaternion(uprightQuat);
+      
+      // Calculate the right vector (cross product of up and forward)
+      const characterUp = toAsteroid.clone().negate(); // Character's up (away from asteroid)
+      const rightVector = uprightForward.clone().cross(characterUp).normalize();
+      
+      // Create yaw rotation around the up vector
+      const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+        characterUp,
+        yawRotationRef.current
+      );
+      
+      // Apply yaw rotation to the upright quaternion
+      const finalQuat = yawQuat.multiply(uprightQuat);
+      
       // Apply the orientation
       rigidBodyRef.current.setRotation({
-        x: targetQuat.x,
-        y: targetQuat.y,
-        z: targetQuat.z,
-        w: targetQuat.w
+        x: finalQuat.x,
+        y: finalQuat.y,
+        z: finalQuat.z,
+        w: finalQuat.w
       });
     } else if (gravityType === 'box') {
       // Regular downward gravity for platforms
@@ -422,25 +452,11 @@ const Character = ({ rigidBodyRef, gravityType, currentAsteroid }) => {
           w: newQuat.w
         });
       } else if (gravityType === 'sphere') {
-        // In sphere gravity, allow full rotation (same as zero gravity for now)
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0),
-          -deltaY * CONTROLS.sensitivity
-        );
-        const yawQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          -deltaX * CONTROLS.sensitivity
-        );
+        // In sphere gravity, only allow yaw rotation (left/right)
+        // Update the stored yaw rotation
+        yawRotationRef.current += -deltaX * CONTROLS.sensitivity;
         
-        // Apply rotations in sequence
-        const newQuat = currentQuat.multiply(yawQuat).multiply(pitchQuat);
-        
-        rigidBodyRef.current.setRotation({
-          x: newQuat.x,
-          y: newQuat.y,
-          z: newQuat.z,
-          w: newQuat.w
-        });
+        // The orientation will be applied in the useFrame hook with the updated yaw
       } else {
         // In zero-g, allow full rotation
         const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
