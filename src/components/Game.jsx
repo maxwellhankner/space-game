@@ -88,8 +88,8 @@ const Character = ({ quaternion, position }) => {
   );
 };
 
-// Simple component that copies character rotation to camera
-const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
+// Camera component that follows the character
+const Camera = ({ characterQuaternion, characterPosition }) => {
   useFrame((state) => {
     const camera = state.camera;
     
@@ -131,417 +131,134 @@ const CameraRotationSync = ({ characterQuaternion, characterPosition }) => {
   return null;
 };
 
-// Base structure component for the two bases
-const BaseStructure = ({ position, color }) => {
-  const mainBaseSize = [40, 20, 40];
-  const commandTowerSize = [10, 30, 10];
-  const modulesSize = [15, 10, 15];
-  const landingPadSize = [20, 2, 20];
-  const walkwaySize = [5, 3, 15];
-
-  return (
-    <group position={position}>
-      {/* Main base building */}
-      <mesh position={[0, mainBaseSize[1]/2, 0]}>
-        <boxGeometry args={mainBaseSize} />
-        <meshStandardMaterial color={color} roughness={0.8} metalness={0.2} />
-      </mesh>
-
-      {/* Command tower */}
-      <mesh position={[0, mainBaseSize[1] + commandTowerSize[1]/2, 0]}>
-        <boxGeometry args={commandTowerSize} />
-        <meshStandardMaterial color={color} roughness={0.6} metalness={0.4} />
-      </mesh>
-
-      {/* Surrounding modules */}
-      {[
-        [mainBaseSize[0]/2 + modulesSize[0]/2, modulesSize[1]/2, 0], // Right module
-        [-mainBaseSize[0]/2 - modulesSize[0]/2, modulesSize[1]/2, 0], // Left module
-        [0, modulesSize[1]/2, mainBaseSize[2]/2 + modulesSize[2]/2], // Front module
-        [0, modulesSize[1]/2, -mainBaseSize[2]/2 - modulesSize[2]/2], // Back module
-      ].map((modulePos, index) => (
-        <mesh key={index} position={modulePos}>
-          <boxGeometry args={modulesSize} />
-          <meshStandardMaterial color={color} roughness={0.7} metalness={0.3} />
-        </mesh>
-      ))}
-
-      {/* Landing pads */}
-      {[
-        [mainBaseSize[0]/2 + landingPadSize[0]/2 + 10, landingPadSize[1]/2, mainBaseSize[2]/2], // Right pad
-        [-mainBaseSize[0]/2 - landingPadSize[0]/2 - 10, landingPadSize[1]/2, -mainBaseSize[2]/2], // Left pad
-      ].map((padPos, index) => (
-        <mesh key={index} position={padPos}>
-          <boxGeometry args={landingPadSize} />
-          <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
-        </mesh>
-      ))}
-
-      {/* Connecting walkways */}
-      {[
-        [mainBaseSize[0]/2 + walkwaySize[0]/2, walkwaySize[1]/2, 0], // Right walkway
-        [-mainBaseSize[0]/2 - walkwaySize[0]/2, walkwaySize[1]/2, 0], // Left walkway
-        [0, walkwaySize[1]/2, mainBaseSize[2]/2 + walkwaySize[2]/2], // Front walkway
-        [0, walkwaySize[1]/2, -mainBaseSize[2]/2 - walkwaySize[2]/2], // Back walkway
-      ].map((walkwayPos, index) => (
-        <mesh key={index} position={walkwayPos}>
-          <boxGeometry args={walkwaySize} />
-          <meshStandardMaterial color={color} roughness={0.7} metalness={0.3} />
-        </mesh>
-      ))}
-    </group>
-  );
-};
-
-// Collidable asteroid component
-const Asteroid = ({ position, radius = 15, segments = 16, onCollision, characterPosition }) => {
-  const asteroidRef = useRef();
-  const collisionRadius = radius * 1.2; // Slightly larger collision sphere
-  
-  // Collision check function
-  const checkCollision = (characterPosition) => {
-    if (asteroidRef.current) {
-      const asteroidPos = asteroidRef.current.position;
-      const distance = Math.sqrt(
-        Math.pow(characterPosition.x - asteroidPos.x, 2) +
-        Math.pow(characterPosition.y - asteroidPos.y, 2) +
-        Math.pow(characterPosition.z - asteroidPos.z, 2)
-      );
-      return distance < collisionRadius;
-    }
-    return false;
-  };
-
-  // Simple collision check
-  useFrame(() => {
-    if (asteroidRef.current && onCollision && characterPosition) {
-      // Always provide collision data for position checking
-      onCollision(asteroidRef.current.position, collisionRadius);
-    }
-  });
-
-  return (
-    <group position={position} ref={asteroidRef}>
-      {/* Visible asteroid */}
-      <mesh>
-        <sphereGeometry args={[radius, segments, segments]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.8} metalness={0.2} />
-      </mesh>
-      
-      {/* Collision sphere (semi-transparent for debugging) */}
-      <mesh>
-        <sphereGeometry args={[collisionRadius, segments, segments]} />
-        <meshStandardMaterial color="#ff0000" transparent opacity={0.1} wireframe />
-      </mesh>
-    </group>
-  );
-};
-
-// Data provider component that runs inside Canvas
-const DataProvider = ({ onDataUpdate, characterQuaternion, characterPosition }) => {
-  useFrame((state) => {
-    const camera = state.camera;
-    
-    // Convert quaternion to Euler angles for display using the same rotation order as CameraRotationSync
-    const euler = new THREE.Euler();
-    euler.setFromQuaternion(camera.quaternion, 'YXZ'); // Y (yaw) → X (pitch) → Z (roll)
-    
-    const cameraData = {
-      position: [
-        Math.round(camera.position.x),
-        Math.round(camera.position.y),
-        Math.round(camera.position.z)
-      ],
-      rotation: [
-        Math.round(euler.x * 180 / Math.PI),
-        Math.round(euler.y * 180 / Math.PI),
-        Math.round(euler.z * 180 / Math.PI)
-      ],
-      quaternion: [
-        camera.quaternion.x.toFixed(3),
-        camera.quaternion.y.toFixed(3),
-        camera.quaternion.z.toFixed(3),
-        camera.quaternion.w.toFixed(3)
-      ],
-      fov: Math.round(camera.fov)
-    };
-    
-    // Character position is now dynamic based on movement
-    // Extract Euler angles from quaternion for display
-    const characterEuler = new THREE.Euler();
-    characterEuler.setFromQuaternion(characterQuaternion, 'YXZ');
-    
-    const characterData = {
-      position: [
-        Math.round(characterPosition.x),
-        Math.round(characterPosition.y),
-        Math.round(characterPosition.z)
-      ],
-      rotation: [
-        Math.round(characterEuler.x * 180 / Math.PI),
-        Math.round(characterEuler.y * 180 / Math.PI),
-        Math.round(characterEuler.z * 180 / Math.PI)
-      ],
-      quaternion: [
-        characterQuaternion.x.toFixed(3),
-        characterQuaternion.y.toFixed(3),
-        characterQuaternion.z.toFixed(3),
-        characterQuaternion.w.toFixed(3)
-      ],
-      status: 'ACTIVE'
-    };
-    
-    onDataUpdate({ camera: cameraData, character: characterData });
-  });
-  
-  return null; // This component doesn't render anything
-};
-
-// Combined monitor component
-const Monitor = ({ data }) => {
-  if (!data) return null;
-  
-  return (
-    <>
-      {/* Astronaut Monitor */}
-      <div className="absolute bottom-4 left-4 z-10 bg-black/70 text-white p-3 rounded-lg font-mono text-xs backdrop-blur-sm border border-white/20">
-        <div className="space-y-1">
-          <div className="text-blue-400 font-semibold">ASTRONAUT MONITOR</div>
-          <div>POS: [{data.character.position[0]}, {data.character.position[1]}, {data.character.position[2]}]</div>
-          <div>ROT: [{data.character.rotation[0]}°, {data.character.rotation[1]}°, {data.character.rotation[2]}°]</div>
-          <div>STATUS: {data.character.status}</div>
-          <div className="text-yellow-400 text-xs">Euler: X:{data.character.rotation[0].toFixed(2)}° Y:{data.character.rotation[1].toFixed(2)}° Z:{data.character.rotation[2].toFixed(2)}°</div>
-          <div className="text-purple-400 text-xs">Quat: [{data.character.quaternion[0]}, {data.character.quaternion[1]}, {data.character.quaternion[2]}, {data.character.quaternion[3]}]</div>
-        </div>
-      </div>
-
-      {/* Camera Monitor */}
-      <div className="absolute bottom-4 right-4 z-10 bg-black/70 text-white p-3 rounded-lg font-mono text-xs backdrop-blur-sm border border-white/20">
-        <div className="space-y-1">
-          <div className="text-green-400 font-semibold">CAMERA MONITOR</div>
-          <div>POS: [{data.camera.position[0]}, {data.camera.position[1]}, {data.camera.position[2]}]</div>
-          <div>ROT: [{data.camera.rotation[0]}°, {data.camera.rotation[1]}°, {data.camera.rotation[2]}°]</div>
-          <div>FOV: {data.camera.fov}°</div>
-          <div className="text-yellow-400 text-xs">Euler: X:{data.camera.rotation[0].toFixed(2)}° Y:{data.camera.rotation[1].toFixed(2)}° Z:{data.camera.rotation[2].toFixed(2)}°</div>
-          <div className="text-purple-400 text-xs">Quat: [{data.camera.quaternion[0]}, {data.camera.quaternion[1]}, {data.camera.quaternion[2]}, {data.camera.quaternion[3]}]</div>
-        </div>
-      </div>
-    </>
-  );
-};
-
-// Custom hook for movement controls
-const useMovementControls = (onBackToMenu) => {
-  const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
-  const [characterVelocity, setCharacterVelocity] = useState({ x: 0, y: 0, z: 0 });
-  const [characterPosition, setCharacterPosition] = useState({ x: 0, y: 0, z: 0 });
-  const [rotationalVelocity, setRotationalVelocity] = useState(new THREE.Vector3(0, 0, 0));
+// Controls component that handles input and movement
+const Controls = ({ onBackToMenu, onUpdatePosition, onUpdateQuaternion }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
-  const [lastMouseX, setLastMouseX] = useState(0);
-  const [lastMouseY, setLastMouseY] = useState(0);
-  const [collisionPoint, setCollisionPoint] = useState(null);
-  const [collisionRadius, setCollisionRadius] = useState(0);
-
-  const calculateDirectionVectors = (quaternion) => {
-    const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-    const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
-    const upVector = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-
-    return {
-      forward: { x: forwardVector.x, y: forwardVector.y, z: forwardVector.z },
-      backward: { x: -forwardVector.x, y: -forwardVector.y, z: -forwardVector.z },
-      right: { x: rightVector.x, y: rightVector.y, z: rightVector.z },
-      left: { x: -rightVector.x, y: -rightVector.y, z: -rightVector.z },
-      up: { x: upVector.x, y: upVector.y, z: upVector.z },
-      down: { x: -upVector.x, y: -upVector.y, z: -upVector.z }
-    };
-  };
+  const mousePos = useRef({ x: 0, y: 0 });
+  const pressedKeys = useRef(new Set());
+  const velocity = useRef(new THREE.Vector3(0, 0, 0));
+  const characterQuaternion = useRef(new THREE.Quaternion());
+  const characterPosition = useRef(new THREE.Vector3(0, 0, 0));
 
   const handleMouseDown = (e) => {
-    // Find the canvas element
     const canvas = document.getElementById('game-canvas');
-    // Check if the click target is the canvas or a child of the canvas
     if (canvas && (e.target === canvas || canvas.contains(e.target))) {
       setIsMouseDown(true);
-      setLastMouseX(e.clientX);
-      setLastMouseY(e.clientY);
+      mousePos.current = { x: e.clientX, y: e.clientY };
     }
-  };
-
-  const handleMouseUp = () => {
-    setIsMouseDown(false);
   };
 
   const handleMouseMove = (e) => {
     if (isMouseDown) {
-      const deltaX = e.clientX - lastMouseX;
-      const deltaY = e.clientY - lastMouseY;
-      
-      // Reduced sensitivity for smoother movement
+      const deltaX = e.clientX - mousePos.current.x;
+      const deltaY = e.clientY - mousePos.current.y;
       const sensitivity = 0.003;
       
-      setCharacterQuaternion(prev => {
-        const newQuaternion = prev.clone();
-        
-        // Create and normalize rotation quaternions
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0), 
-          -deltaY * sensitivity
-        );
-        const yawQuat = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 1, 0), 
-          -deltaX * sensitivity
-        );
-        
-        // Apply rotations in sequence and normalize
-        newQuaternion.multiply(pitchQuat).multiply(yawQuat).normalize();
-        return newQuaternion;
-      });
+      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0), 
+        -deltaY * sensitivity
+      );
+      const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0), 
+        -deltaX * sensitivity
+      );
       
-      setLastMouseX(e.clientX);
-      setLastMouseY(e.clientY);
+      characterQuaternion.current
+        .multiply(pitchQuat)
+        .multiply(yawQuat)
+        .normalize();
+      
+      onUpdateQuaternion(characterQuaternion.current);
+      mousePos.current = { x: e.clientX, y: e.clientY };
     }
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
+    const key = e.key.toLowerCase();
+    if (key === 'escape') {
       onBackToMenu();
       return;
     }
+    pressedKeys.current.add(key);
+  };
 
-    const thrustPower = 0.25;
-    const key = e.key.toLowerCase();
-    const directions = calculateDirectionVectors(characterQuaternion);
-    
-    // Map keys to direction names
-    const keyMap = {
-      'w': 'forward',
-      's': 'backward',
-      'd': 'right',
-      'a': 'left',
-      'e': 'up',
-      'q': 'down'
-    };
-    
-    if (keyMap[key]) {
-      const thrustDirection = directions[keyMap[key]];
-      setCharacterVelocity(prev => ({
-        x: prev.x + thrustDirection.x * thrustPower,
-        y: prev.y + thrustDirection.y * thrustPower,
-        z: prev.z + thrustDirection.z * thrustPower
-      }));
-    } else if (key === ' ') {
-      setCharacterVelocity({ x: 0, y: 0, z: 0 });
-      setRotationalVelocity(new THREE.Vector3(0, 0, 0));
-    } else if (key === 'r' || key === 'f') {
-      const rollPower = 0.02;
-      const maxSpeed = 0.1;
-      const direction = key === 'r' ? 1 : -1;
-      
-      setRotationalVelocity(prev => {
-        const newZ = Math.max(-maxSpeed, Math.min(maxSpeed, prev.z + rollPower * direction));
-        return new THREE.Vector3(0, 0, newZ);
-      });
-    }
+  const handleKeyUp = (e) => {
+    pressedKeys.current.delete(e.key.toLowerCase());
   };
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [characterQuaternion]);
-
-  useEffect(() => {
+    document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseup', () => setIsMouseDown(false));
     document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseup', () => setIsMouseDown(false));
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [isMouseDown, lastMouseX, lastMouseY]);
+  }, [isMouseDown]);
 
-  useEffect(() => {
-    const physicsInterval = setInterval(() => {
-      setCharacterPosition(prev => {
-        const newPos = {
-          x: prev.x + characterVelocity.x,
-          y: prev.y + characterVelocity.y,
-          z: prev.z + characterVelocity.z
-        };
-        
-        const maxRadius = 400;
-        // Calculate distance from center
-        const distance = Math.sqrt(
-          newPos.x * newPos.x + 
-          newPos.y * newPos.y + 
-          newPos.z * newPos.z
-        );
-        
-        let boundedPos = { ...newPos };
-        
-        // If outside sphere, scale position back to sphere surface
-        if (distance > maxRadius) {
-          const scale = maxRadius / distance;
-          boundedPos = {
-            x: newPos.x * scale,
-            y: newPos.y * scale,
-            z: newPos.z * scale
-          };
-        }
+  useFrame(() => {
+    // Handle movement
+    const thrustPower = 0.01;
+    
+    if (pressedKeys.current.has(' ')) {
+      // Full stop
+      velocity.current.set(0, 0, 0);
+    } else if (pressedKeys.current.size > 0) {
+      const moveDir = new THREE.Vector3();
+      
+      if (pressedKeys.current.has('w')) moveDir.z -= 1;
+      if (pressedKeys.current.has('s')) moveDir.z += 1;
+      if (pressedKeys.current.has('d')) moveDir.x += 1;
+      if (pressedKeys.current.has('a')) moveDir.x -= 1;
+      if (pressedKeys.current.has('e')) moveDir.y += 1;
+      if (pressedKeys.current.has('q')) moveDir.y -= 1;
 
-        if (collisionPoint) {
-          const newDistance = Math.sqrt(
-            Math.pow(boundedPos.x - collisionPoint.x, 2) +
-            Math.pow(boundedPos.y - collisionPoint.y, 2) +
-            Math.pow(boundedPos.z - collisionPoint.z, 2)
-          );
-          
-          if (newDistance < collisionRadius) {
-            setCharacterVelocity({ x: 0, y: 0, z: 0 });
-            return prev;
-          }
-        }
-        
-        return boundedPos;
-      });
-
-      if (rotationalVelocity.x !== 0 || rotationalVelocity.y !== 0 || rotationalVelocity.z !== 0) {
-        setCharacterQuaternion(prev => {
-          const newQuaternion = prev.clone();
-          const rotationQuat = new THREE.Quaternion();
-          rotationQuat.setFromEuler(new THREE.Euler(
-            rotationalVelocity.x,
-            rotationalVelocity.y,
-            rotationalVelocity.z,
-            'XYZ'
-          ));
-          newQuaternion.multiply(rotationQuat);
-          return newQuaternion;
-        });
+      if (moveDir.length() > 0) {
+        moveDir.normalize().multiplyScalar(thrustPower);
+        moveDir.applyQuaternion(characterQuaternion.current);
+        velocity.current.add(moveDir);
       }
-    }, 16);
+    }
 
-    return () => clearInterval(physicsInterval);
-  }, [characterVelocity, rotationalVelocity]);
+    // Update position
+    const newPos = characterPosition.current.clone().add(velocity.current);
+    const maxRadius = 400;
+    const distance = newPos.length();
+    
+    if (distance > maxRadius) {
+      newPos.normalize().multiplyScalar(maxRadius);
+      // Bounce off the boundary a bit
+      velocity.current.multiplyScalar(-0.5);
+    }
+    
+    characterPosition.current.copy(newPos);
+    onUpdatePosition(characterPosition.current);
 
-  return {
-    characterQuaternion,
-    characterPosition,
-    setCollisionPoint,
-    setCollisionRadius
-  };
+    // Handle roll
+    if (pressedKeys.current.has('r') || pressedKeys.current.has('f')) {
+      const rollPower = 0.02;
+      const direction = pressedKeys.current.has('r') ? 1 : -1;
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        rollPower * direction
+      );
+      characterQuaternion.current.multiply(rollQuat);
+      onUpdateQuaternion(characterQuaternion.current);
+    }
+  });
+
+  return null;
 };
 
 const Game = ({ onBackToMenu }) => {
-  const [monitorData, setMonitorData] = useState(null);
-  const {
-    characterQuaternion,
-    characterPosition,
-    setCollisionPoint,
-    setCollisionRadius
-  } = useMovementControls(onBackToMenu);
+  const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
+  const [characterPosition, setCharacterPosition] = useState(new THREE.Vector3(0, 0, 0));
 
   return (
     <div className="w-full h-full bg-black">
@@ -559,24 +276,14 @@ const Game = ({ onBackToMenu }) => {
         <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
         
         <Starfield />
-        <BaseStructure position={[-200, 0, 0]} color="#0a4a0a" />
-        <BaseStructure position={[200, 0, 0]} color="#ff8c00" />
-        
-        <Asteroid 
-          position={[0, 0, -50]} 
-          characterPosition={characterPosition}
-          onCollision={(point, radius) => {
-            setCollisionPoint(point);
-            setCollisionRadius(radius);
-          }}
-        />
-        
         <Character quaternion={characterQuaternion} position={characterPosition} />
-        <CameraRotationSync characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
-        <DataProvider onDataUpdate={setMonitorData} characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        <Camera characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        <Controls 
+          onBackToMenu={onBackToMenu}
+          onUpdatePosition={setCharacterPosition}
+          onUpdateQuaternion={setCharacterQuaternion}
+        />
       </Canvas>
-      
-      <Monitor data={monitorData} />
     </div>
   );
 };
