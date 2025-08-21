@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
+import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier';
 import * as THREE from 'three';
 
 // Starfield component
@@ -125,6 +126,19 @@ const Controls = ({ onUpdateQuaternion }) => {
   return null;
 };
 
+// Fixed platform below the player
+const Platform = ({ position }) => {
+  return (
+    <RigidBody type="fixed" colliders={false} position={position}>
+      <CuboidCollider args={[5, 0.25, 5]} />
+      <mesh receiveShadow position={[0, 0, 0]}>
+        <boxGeometry args={[10, 0.5, 10]} />
+        <meshStandardMaterial color="#444444" />
+      </mesh>
+    </RigidBody>
+  );
+};
+
 // Game component
 const Game = () => {
   const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
@@ -140,13 +154,16 @@ const Game = () => {
           gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         }}
       >
-        <ambientLight intensity={.6} />
-        <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
-        <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
-        <Starfield />
-        <Character characterQuaternion={characterQuaternion} />
-        <Camera characterQuaternion={characterQuaternion} />
-        <Controls onUpdateQuaternion={setCharacterQuaternion} />
+        <Physics gravity={[0, 0, 0]} debug>
+          <ambientLight intensity={.6} />
+          <directionalLight position={[-200, 50, 0]} intensity={2.0} target-position={[210, 0, 0]} />
+          <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
+          <Starfield />
+          <Platform position={[0, -5, 0]} />
+          <Character characterQuaternion={characterQuaternion} />
+          <Camera characterQuaternion={characterQuaternion} />
+          <Controls onUpdateQuaternion={setCharacterQuaternion} />
+        </Physics>
       </Canvas>
     </div>
   );
