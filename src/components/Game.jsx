@@ -44,17 +44,22 @@ const Character = ({ characterQuaternion }) => {
 
 // Camera component
 const Camera = ({ characterQuaternion }) => {
+  // Reusable vectors to avoid creating new ones every frame
+  const backward = useRef(new THREE.Vector3(0, 0, 1));
+  const up = useRef(new THREE.Vector3(0, 1, 0));
+  
   useFrame((state) => {
     const camera = state.camera;
     camera.quaternion.copy(characterQuaternion);
-    // Approach the character from behind and above
-    const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(characterQuaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(characterQuaternion);
+    
+    // Update existing vectors instead of creating new ones
+    backward.current.set(0, 0, 1).applyQuaternion(characterQuaternion);
+    up.current.set(0, 1, 0).applyQuaternion(characterQuaternion);
     
     camera.position.set(
-      backward.x * 10 + up.x * 2,
-      backward.y * 10 + up.y * 2,
-      backward.z * 10 + up.z * 2
+      backward.current.x * 10 + up.current.x * 2,
+      backward.current.y * 10 + up.current.y * 2,
+      backward.current.z * 10 + up.current.z * 2
     );
   });
   
@@ -67,14 +72,15 @@ const Controls = ({ onUpdateQuaternion }) => {
   const mousePos = useRef({ x: 0, y: 0 });
   const [quaternion, setQuaternion] = useState(new THREE.Quaternion());
   
-  // Reusable quaternions to avoid creating new ones every frame
+  // Reusable quaternions and vectors to avoid creating new ones every frame
   const pitchQuat = useRef(new THREE.Quaternion());
   const yawQuat = useRef(new THREE.Quaternion());
   const tempQuat = useRef(new THREE.Quaternion());
+  const xAxis = useRef(new THREE.Vector3(1, 0, 0));
+  const yAxis = useRef(new THREE.Vector3(0, 1, 0));
 
   const handleMouseDown = (e) => {
-    const canvas = document.getElementById('game-canvas');
-    if (canvas && (e.target === canvas || canvas.contains(e.target))) {
+    if (e.target.closest('#game-canvas')) {
       setIsMouseDown(true);
       mousePos.current = { x: e.clientX, y: e.clientY };
     }
@@ -88,8 +94,8 @@ const Controls = ({ onUpdateQuaternion }) => {
     const sensitivity = 0.003;
     
     // Update existing quaternions instead of creating new ones
-    pitchQuat.current.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deltaY * sensitivity);
-    yawQuat.current.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sensitivity);
+    pitchQuat.current.setFromAxisAngle(xAxis.current, -deltaY * sensitivity);
+    yawQuat.current.setFromAxisAngle(yAxis.current, -deltaX * sensitivity);
     
     // Use temp quaternion to avoid mutating the original
     tempQuat.current.copy(quaternion)
@@ -119,6 +125,7 @@ const Controls = ({ onUpdateQuaternion }) => {
   return null;
 };
 
+// Game component
 const Game = () => {
   const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
 
