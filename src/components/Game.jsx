@@ -52,7 +52,7 @@ const Starfield = () => {
 };
 
 // Character component that will be the center focal point
-const Character = ({ quaternion, position }) => {
+const Character = ({ characterQuaternion }) => {
   const { scene } = useGLTF('/models/astronaut-1.glb');
   const modelRef = useRef();
   
@@ -67,7 +67,7 @@ const Character = ({ quaternion, position }) => {
   useFrame(() => {
     if (modelRef.current && scene) {
       // Create a quaternion that combines the character's rotation with the initial model orientation
-      const finalQuaternion = quaternion.clone();
+      const finalQuaternion = characterQuaternion.clone();
       
       // Apply the initial model orientation (facing forward)
       const initialQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -76,8 +76,8 @@ const Character = ({ quaternion, position }) => {
       // Apply the quaternion to the scene
       scene.quaternion.copy(finalQuaternion);
       
-      // Set position
-      scene.position.set(position.x, position.y, position.z);
+      // Keep character at center position
+      scene.position.set(0, 0, 0);
     }
   });
 
@@ -89,19 +89,14 @@ const Character = ({ quaternion, position }) => {
 };
 
 // Camera component that follows the character
-const Camera = ({ characterQuaternion, characterPosition }) => {
+const Camera = ({ characterQuaternion }) => {
   useFrame((state) => {
     const camera = state.camera;
     
     // Apply the character's quaternion directly to the camera
     camera.quaternion.copy(characterQuaternion);
     
-    // Calculate position to always be behind the character
-    // Extract Euler angles from quaternion for position calculations
-    const euler = new THREE.Euler();
-    euler.setFromQuaternion(characterQuaternion, 'YXZ');
-    
-    // Camera distances
+    // Fixed camera position behind the character
     const cameraDistanceBehind = 10;
     const cameraHeightOffset = 2;
 
@@ -109,36 +104,25 @@ const Camera = ({ characterQuaternion, characterPosition }) => {
     const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(characterQuaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(characterQuaternion);
     
-    // Calculate camera position by moving backward and up from character position
-    const cameraPosition = new THREE.Vector3(
-      characterPosition.x,
-      characterPosition.y,
-      characterPosition.z
-    );
+    // Calculate camera position by moving backward and up from center
+    const cameraPosition = new THREE.Vector3(0, 0, 0);
     
     // Add offset in both directions
     cameraPosition.add(backward.multiplyScalar(cameraDistanceBehind));
     cameraPosition.add(up.multiplyScalar(cameraHeightOffset));
     
     // Set final camera position
-    const cameraX = cameraPosition.x;
-    const cameraY = cameraPosition.y;
-    const cameraZ = cameraPosition.z;
-    
-    camera.position.set(cameraX, cameraY, cameraZ);
+    camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
   });
   
   return null;
 };
 
-// Controls component that handles input and movement
-const Controls = ({ onBackToMenu, onUpdatePosition, onUpdateQuaternion }) => {
+// Controls component that handles only look-around controls
+const Controls = ({ onUpdateQuaternion }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
   const mousePos = useRef({ x: 0, y: 0 });
-  const pressedKeys = useRef(new Set());
-  const velocity = useRef(new THREE.Vector3(0, 0, 0));
   const characterQuaternion = useRef(new THREE.Quaternion());
-  const characterPosition = useRef(new THREE.Vector3(0, 0, 0));
 
   const handleMouseDown = (e) => {
     const canvas = document.getElementById('game-canvas');
@@ -173,92 +157,23 @@ const Controls = ({ onBackToMenu, onUpdatePosition, onUpdateQuaternion }) => {
     }
   };
 
-  const handleKeyDown = (e) => {
-    const key = e.key.toLowerCase();
-    if (key === 'escape') {
-      onBackToMenu();
-      return;
-    }
-    pressedKeys.current.add(key);
-  };
-
-  const handleKeyUp = (e) => {
-    pressedKeys.current.delete(e.key.toLowerCase());
-  };
-
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mouseup', () => setIsMouseDown(false));
     document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mouseup', () => setIsMouseDown(false));
       document.removeEventListener('mousemove', handleMouseMove);
     };
   }, [isMouseDown]);
 
-  useFrame(() => {
-    // Handle movement
-    const thrustPower = 0.01;
-    
-    if (pressedKeys.current.has(' ')) {
-      // Full stop
-      velocity.current.set(0, 0, 0);
-    } else if (pressedKeys.current.size > 0) {
-      const moveDir = new THREE.Vector3();
-      
-      if (pressedKeys.current.has('w')) moveDir.z -= 1;
-      if (pressedKeys.current.has('s')) moveDir.z += 1;
-      if (pressedKeys.current.has('d')) moveDir.x += 1;
-      if (pressedKeys.current.has('a')) moveDir.x -= 1;
-      if (pressedKeys.current.has('e')) moveDir.y += 1;
-      if (pressedKeys.current.has('q')) moveDir.y -= 1;
-
-      if (moveDir.length() > 0) {
-        moveDir.normalize().multiplyScalar(thrustPower);
-        moveDir.applyQuaternion(characterQuaternion.current);
-        velocity.current.add(moveDir);
-      }
-    }
-
-    // Update position
-    const newPos = characterPosition.current.clone().add(velocity.current);
-    const maxRadius = 400;
-    const distance = newPos.length();
-    
-    if (distance > maxRadius) {
-      newPos.normalize().multiplyScalar(maxRadius);
-      // Bounce off the boundary a bit
-      velocity.current.multiplyScalar(-0.5);
-    }
-    
-    characterPosition.current.copy(newPos);
-    onUpdatePosition(characterPosition.current);
-
-    // Handle roll
-    if (pressedKeys.current.has('r') || pressedKeys.current.has('f')) {
-      const rollPower = 0.02;
-      const direction = pressedKeys.current.has('r') ? 1 : -1;
-      const rollQuat = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 0, 1),
-        rollPower * direction
-      );
-      characterQuaternion.current.multiply(rollQuat);
-      onUpdateQuaternion(characterQuaternion.current);
-    }
-  });
-
   return null;
 };
 
-const Game = ({ onBackToMenu }) => {
+const Game = () => {
   const [characterQuaternion, setCharacterQuaternion] = useState(new THREE.Quaternion());
-  const [characterPosition, setCharacterPosition] = useState(new THREE.Vector3(0, 0, 0));
 
   return (
     <div className="w-full h-full bg-black">
@@ -276,11 +191,9 @@ const Game = ({ onBackToMenu }) => {
         <directionalLight position={[200, 50, 0]} intensity={2.0} target-position={[-210, 0, 0]} />
         
         <Starfield />
-        <Character quaternion={characterQuaternion} position={characterPosition} />
-        <Camera characterQuaternion={characterQuaternion} characterPosition={characterPosition} />
+        <Character characterQuaternion={characterQuaternion} />
+        <Camera characterQuaternion={characterQuaternion} />
         <Controls 
-          onBackToMenu={onBackToMenu}
-          onUpdatePosition={setCharacterPosition}
           onUpdateQuaternion={setCharacterQuaternion}
         />
       </Canvas>
