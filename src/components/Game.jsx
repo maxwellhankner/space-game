@@ -65,7 +65,12 @@ const Camera = ({ characterQuaternion }) => {
 const Controls = ({ onUpdateQuaternion }) => {
   const [isMouseDown, setIsMouseDown] = useState(false);
   const mousePos = useRef({ x: 0, y: 0 });
-  const characterQuaternion = useRef(new THREE.Quaternion());
+  const [quaternion, setQuaternion] = useState(new THREE.Quaternion());
+  
+  // Reusable quaternions to avoid creating new ones every frame
+  const pitchQuat = useRef(new THREE.Quaternion());
+  const yawQuat = useRef(new THREE.Quaternion());
+  const tempQuat = useRef(new THREE.Quaternion());
 
   const handleMouseDown = (e) => {
     const canvas = document.getElementById('game-canvas');
@@ -76,41 +81,40 @@ const Controls = ({ onUpdateQuaternion }) => {
   };
 
   const handleMouseMove = (e) => {
-    if (isMouseDown) {
-      const deltaX = e.clientX - mousePos.current.x;
-      const deltaY = e.clientY - mousePos.current.y;
-      const sensitivity = 0.003;
-      
-      const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(1, 0, 0), 
-        -deltaY * sensitivity
-      );
-      const yawQuat = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0), 
-        -deltaX * sensitivity
-      );
-      
-      characterQuaternion.current
-        .multiply(pitchQuat)
-        .multiply(yawQuat)
-        .normalize();
-      
-      onUpdateQuaternion(characterQuaternion.current);
-      mousePos.current = { x: e.clientX, y: e.clientY };
-    }
+    if (!isMouseDown) return;
+    
+    const deltaX = e.clientX - mousePos.current.x;
+    const deltaY = e.clientY - mousePos.current.y;
+    const sensitivity = 0.003;
+    
+    // Update existing quaternions instead of creating new ones
+    pitchQuat.current.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deltaY * sensitivity);
+    yawQuat.current.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * sensitivity);
+    
+    // Use temp quaternion to avoid mutating the original
+    tempQuat.current.copy(quaternion)
+      .multiply(pitchQuat.current)
+      .multiply(yawQuat.current)
+      .normalize();
+    
+    setQuaternion(tempQuat.current);
+    onUpdateQuaternion(tempQuat.current);
+    mousePos.current = { x: e.clientX, y: e.clientY };
   };
 
   useEffect(() => {
+    const handleMouseUp = () => setIsMouseDown(false);
+    
     document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mouseup', () => setIsMouseDown(false));
+    document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', () => setIsMouseDown(false));
+      document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [isMouseDown]);
+  }, [isMouseDown, quaternion]);
 
   return null;
 };
